@@ -444,6 +444,7 @@ if(NOT LevelDB_LIBRARY OR NOT LevelDB_INCLUDE_DIR OR WITH_TSAN)
     -DCMAKE_EXE_LINKER_FLAGS=-L${CMAKE_CURRENT_BINARY_DIR}
     -DCMAKE_INSTALL_LIBDIR=${CMAKE_CURRENT_BINARY_DIR}
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+    -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
   )
   if(NOT SNAPPY_FOUND)
     add_dependencies(leveldb_lib snappy_lib)
@@ -595,8 +596,10 @@ include (RxPrepareInstallFiles)
 
 # Build subdirectories
 add_subdirectory(server)
-add_subdirectory(cmd/reindexer_tool)
-add_subdirectory(cmd/reindexer_server)
+#add_subdirectory(cmd/reindexer_tool)
+#add_subdirectory(cmd/reindexer_server)
+add_subdirectory(core/cbinding)
+add_subdirectory(server/cbinding)
 add_subdirectory(doc)
 
 # Tests and benchmarks
