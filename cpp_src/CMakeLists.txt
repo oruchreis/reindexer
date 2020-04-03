@@ -31,7 +31,7 @@ if (NOT GRPC_PACKAGE_PROVIDER)
 endif ()
 
 if (WIN32)
-  option (LINK_RESOURCES "Link web resources as binary data" OFF)
+  option (LINK_RESOURCES "Link web resources as binary data" ON)
 else()
   option (LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
@@ -414,6 +414,7 @@ if (NOT LevelDB_LIBRARY OR NOT LevelDB_INCLUDE_DIR OR WITH_TSAN)
     "-DCMAKE_CXX_FLAGS=-fPIC -I${CMAKE_CURRENT_BINARY_DIR}/include"
     -DCMAKE_EXE_LINKER_FLAGS=-L${CMAKE_CURRENT_BINARY_DIR}
     -DCMAKE_INSTALL_LIBDIR=${CMAKE_CURRENT_BINARY_DIR}
+    -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
   )
   if (NOT SNAPPY_FOUND)
     add_dependencies(leveldb_lib snappy_lib)
@@ -783,8 +784,10 @@ if (NOT WIN32)
 endif ()
 
 add_subdirectory(server)
-add_subdirectory(cmd/reindexer_tool)
-add_subdirectory(cmd/reindexer_server)
+#add_subdirectory(cmd/reindexer_tool)
+#add_subdirectory(cmd/reindexer_server)
+add_subdirectory(core/cbinding)
+add_subdirectory(server/cbinding)
 add_subdirectory(doc)
 
 # Tests and benchmarks
