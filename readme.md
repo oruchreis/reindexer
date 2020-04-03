@@ -1,4 +1,4 @@
-# Reindexer
+﻿# Reindexer
 
 [![GoDoc](https://godoc.org/github.com/Restream/reindexer?status.svg)](https://godoc.org/github.com/Restream/reindexer)
 [![Build Status](https://github.com/Restream/reindexer/workflows/build/badge.svg?branch=master)](https://github.com/Restream/reindexer/actions)
