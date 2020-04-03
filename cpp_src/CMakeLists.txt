@@ -95,7 +95,6 @@ list(APPEND REINDEXER_LIBRARIES reindexer)
 add_library(${TARGET} STATIC ${HDRS} ${SRCS} ${VENDORS})
 add_definitions(-DREINDEX_CORE_BUILD=1)
 
-
 # add_definitions(-DREINDEX_FT_EXTRA_DEBUG=1)
 
 ## Dependencies
@@ -212,6 +211,7 @@ if (NOT LevelDB_LIBRARY OR NOT LevelDB_INCLUDE_DIR)
     "-DCMAKE_CXX_FLAGS=-fPIC -I${CMAKE_CURRENT_BINARY_DIR}/include"
     -DCMAKE_EXE_LINKER_FLAGS=-L${CMAKE_CURRENT_BINARY_DIR}
     -DCMAKE_INSTALL_LIBDIR=${CMAKE_CURRENT_BINARY_DIR}
+    -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
   )
   if (NOT SNAPPY_FOUND)
     add_dependencies(leveldb_lib snappy_lib)
@@ -535,8 +535,9 @@ if (NOT WIN32)
 endif ()
 
 add_subdirectory(server)
-add_subdirectory(cmd/reindexer_tool)
-add_subdirectory(cmd/reindexer_server)
+#add_subdirectory(cmd/reindexer_tool)
+#add_subdirectory(cmd/reindexer_server)
+add_subdirectory(core/cbinding)
 add_subdirectory(doc)
 
 # Tests and benchmarks
