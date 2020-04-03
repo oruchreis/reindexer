@@ -1,3 +1,6 @@
+################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
 .idea/
 .vscode/ipch
 reindexer.cbp
@@ -13,6 +16,8 @@ logs
 
 cpp_src/doc/Doxyfile-mcss
 
+/.vs
+/out
 __pycache__
 *.pyc
 *.egg-info/
