@@ -33,6 +33,11 @@
           "name": "WITH_PYTHON",
           "value": "False",
           "type": "BOOL"
+        },
+        {
+          "name": "LINK_RESOURCES",
+          "value": "True",
+          "type": "BOOL"
         }
       ]
     },
