@@ -75,7 +75,9 @@ EXPORT reindexer_error reindexer_cancel_context(reindexer_ctx_info ctx_info, ctx
 EXPORT void reindexer_enable_logger(void (*logWriter)(int level, char *msg));
 EXPORT void reindexer_disable_logger();
 
-void reindexer_init_locale();
+EXPORT void reindexer_init_locale();
+
+EXPORT void malloc_free(void* ptr);
 
 #ifdef __cplusplus
 }

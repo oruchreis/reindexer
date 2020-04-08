@@ -741,3 +741,7 @@ void reindexer_init_locale() {
 		setlocale(LC_NUMERIC, "C");
 	});
 }
+
+void malloc_free(void* ptr){
+	free(ptr);
+}
