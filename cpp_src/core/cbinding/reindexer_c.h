@@ -80,6 +80,8 @@ EXPORT void reindexer_disable_logger(void);
 
 EXPORT void reindexer_init_locale(void);
 
+EXPORT void malloc_free(void* ptr);
+
 #ifdef __cplusplus
 }
 #endif
