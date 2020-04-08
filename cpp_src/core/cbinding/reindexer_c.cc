@@ -631,3 +631,7 @@ reindexer_error reindexer_cancel_context(reindexer_ctx_info ctx_info, ctx_cancel
 	}
 	return error2c(Error(errParams));
 }
+
+void malloc_free(void* ptr){
+	free(ptr);
+}
