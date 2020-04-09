@@ -25,7 +25,9 @@ int MkDirAll(const string &path) {
 		if (*p == '/' || *p == '\\') {
 			*p = 0;
 			err = mkdir(tmp, S_IRWXU);
+#ifndef _WIN32 //it can fail if the path starts with a drive letter like C:\ or the user can acces sub path but can't access upper path. so we must continue trying to mkdir to most inner path.
 			if ((err < 0) && (errno != EEXIST)) return err;
+#endif			
 			*p = '/';
 		}
 	}
@@ -34,8 +36,8 @@ int MkDirAll(const string &path) {
 
 int RmDirAll(const string &path) {
 #ifndef _WIN32
-	return nftw(path.c_str(), [](const char *fpath, const struct stat *, int, struct FTW *) { return ::remove(fpath); }, 64,
-				FTW_DEPTH | FTW_PHYS);
+	return nftw(
+		path.c_str(), [](const char *fpath, const struct stat *, int, struct FTW *) { return ::remove(fpath); }, 64, FTW_DEPTH | FTW_PHYS);
 #else
 	(void)path;
 	return 0;
@@ -174,9 +176,9 @@ TimeStats StatTime(const std::string &path) {
 #else
 		return {int64_t(st.st_atime) * 1000000000 + st.st_atimensec, int64_t(st.st_ctime) * 1000000000 + st.st_ctimensec,
 				int64_t(st.st_mtime) * 1000000000 + st.st_mtimensec};
-#endif  // defined(__APPLE__)
+#endif	// defined(__APPLE__)
 	}
-#endif  // _WIN32
+#endif	// _WIN32
 	return {-1, -1, -1};
 }
 
