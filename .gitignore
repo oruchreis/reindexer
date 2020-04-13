@@ -17,6 +17,8 @@ logs
 cpp_src/doc/Doxyfile-mcss
 
 /.vs
+/.vscode
+/out
 /out
 __pycache__
 *.pyc

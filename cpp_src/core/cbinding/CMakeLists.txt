@@ -9,7 +9,7 @@ list(APPEND REINDEXER_LIBRARIES reindexer ${REINDEXER_LIBRARIES})
 include_directories(${PROJECT_SOURCE_DIR})
 add_dependencies(${TARGET} reindexer_binding_library)
 
-target_link_libraries(${TARGET} ${REINDEXER_LIBRARIES})
+target_link_libraries(${TARGET} PRIVATE ${REINDEXER_LIBRARIES})
 
 install(TARGETS ${TARGET}
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"

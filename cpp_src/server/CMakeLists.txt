@@ -16,7 +16,8 @@ file(WRITE ${PROJECT_BINARY_DIR}/swagger_replace.cmake
 )
 
 file(WRITE ${PROJECT_BINARY_DIR}/make_swagger.cmake
-    "file(
+    "if (NOT EXISTS \"${PROJECT_BINARY_DIR}/swagger/\")
+    file(
 	DOWNLOAD \"https://codeload.github.com/swagger-api/swagger-ui/tar.gz/${SWAGGER_VERSION}\"
 	\"${PROJECT_BINARY_DIR}/swagger.tar.gz\"
      )
@@ -47,7 +48,8 @@ file(WRITE ${PROJECT_BINARY_DIR}/make_swagger.cmake
        COMMAND ${CMAKE_COMMAND} -E remove_directory \"${PROJECT_BINARY_DIR}/swagger-ui-${SWAGGER_VERSION}\"
        RESULT_VARIABLE ret
      )
-     file(REMOVE \"${PROJECT_BINARY_DIR}/swagger.tar.gz\")"
+     file(REMOVE \"${PROJECT_BINARY_DIR}/swagger.tar.gz\")
+     endif()"
 )
 
 file(WRITE ${PROJECT_BINARY_DIR}/make_face.cmake
@@ -124,8 +126,8 @@ include_directories(${PROJECT_SOURCE_DIR}/vendor)
 
 if (LINK_RESOURCES)
     add_dependencies(${TARGET} reindexer_server_resources)
-    target_link_libraries(${TARGET} reindexer_server_resources)
-    target_link_libraries(${TARGET} reindexer)
+    target_link_libraries(${TARGET} PRIVATE reindexer_server_resources)
+    target_link_libraries(${TARGET} PRIVATE reindexer)
 endif()
 if (ENABLE_GRPC)
     add_dependencies(${TARGET} reindexer_grpc_library)

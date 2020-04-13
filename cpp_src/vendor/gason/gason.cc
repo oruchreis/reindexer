@@ -1,5 +1,12 @@
 #ifndef _MSC_VER
 #pragma GCC diagnostic ignored "-Wold-style-cast"
+#if defined(__has_warning) 
+	#if __has_warning("-Wmaybe-uninitialized")
+		#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+	#endif
+#else
+	#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 #endif
 
 #include "gason.h"

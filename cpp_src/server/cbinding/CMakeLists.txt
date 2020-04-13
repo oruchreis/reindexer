@@ -1,52 +1,38 @@
-cmake_minimum_required(VERSION 2.8)
+if(MSVC)
+    cmake_minimum_required(VERSION 3.15)
+    cmake_policy(SET CMP0091 NEW)
+else()
+    cmake_minimum_required(VERSION 2.8)
+endif()
+cmake_policy(SET CMP0069 NEW) 
+set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
 
-project(reindexer_embedded_server)
+project(reindexer)
 
 set(TARGET reindexer_embedded_server)
 
 add_library(${TARGET} SHARED "server_c.cc" "../../core/cbinding/reindexer_c.cc")
-list(APPEND REINDEXER_LIBRARIES reindexer_server_library reindexer ${REINDEXER_LIBRARIES})
+#There is a ice bug in gcc when enabled lto, so disabled: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=91288
+#set_property(TARGET ${TARGET} PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+set_property(TARGET ${TARGET} PROPERTY POSITION_INDEPENDENT_CODE ON)
+list(APPEND REINDEXER_LIBRARIES reindexer_server_library)
 include_directories(${PROJECT_SOURCE_DIR})
 add_dependencies(${TARGET} reindexer_server_library)
 
-target_link_libraries(${TARGET} ${REINDEXER_LIBRARIES})
+#if (NOT MSVC)
+#    set_target_properties(${TARGET} PROPERTIES LINK_SEARCH_START_STATIC 1)
+#    set_target_properties(${TARGET} PROPERTIES LINK_SEARCH_END_STATIC 1)
+#endif()
 
-install(TARGETS ${TARGET}
-    RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
-    LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
-    ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
-)
+message(STATUS "'${TARGET}' Target Link Libs: ${REINDEXER_LIBRARIES}")
+target_link_libraries(${TARGET} PRIVATE ${REINDEXER_LIBRARIES})
 
-if (NOT LINK_RESOURCES)
-  install(DIRECTORY ${SERVER_LIB_DIR}/swagger ${SERVER_LIB_DIR}/face
-      DESTINATION share/reindexer/web OPTIONAL
-  )
-endif()
-
-set (DESTINATION_ETC_DIR etc)
-if (NOT APPLE AND NOT WIN32)
-  set (DESTINATION_ETC_DIR ${DESTDIR}/etc)
-  install (CODE "configure_file(${PROJECT_SOURCE_DIR}/contrib/sysvinit.in ${PROJECT_BINARY_DIR}/contrib/sysvinit)")
-  install (FILES ${PROJECT_BINARY_DIR}/contrib/sysvinit DESTINATION ${DESTINATION_ETC_DIR}/init.d RENAME reindexer PERMISSIONS OWNER_WRITE OWNER_EXECUTE OWNER_READ GROUP_READ WORLD_READ)
-endif()
-
-install (CODE "
-if (NOT WIN32)
-   if (APPLE)
-      set (REINDEXER_INSTALL_PREFIX \"${CMAKE_INSTALL_PREFIX}\")
-   else()
-      set (REINDEXER_INSTALL_PREFIX \"\${CMAKE_INSTALL_PREFIX}\")
-   endif ()
-endif()
-configure_file(${PROJECT_SOURCE_DIR}/contrib/config.yml.in ${PROJECT_BINARY_DIR}/contrib/config.yml)
-")
-install (FILES ${PROJECT_BINARY_DIR}/contrib/config.yml DESTINATION ${DESTINATION_ETC_DIR} RENAME reindexer.conf.pkg PERMISSIONS OWNER_WRITE OWNER_READ GROUP_READ WORLD_READ)
-
-SET(CPACK_DEBIAN_SERVER_PACKAGE_CONTROL_EXTRA ${PROJECT_SOURCE_DIR}/contrib/deb/postinst)
-SET(CPACK_RPM_SERVER_POST_INSTALL_SCRIPT_FILE ${PROJECT_SOURCE_DIR}/contrib/rpm/postinst)
-set(CPACK_RPM_RELOCATION_PATHS "/etc")
 if (WIN32)
   if (MSVC)
+    set_property(TARGET ${TARGET} PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    target_compile_options(${TARGET} PRIVATE "/MT$<$<CONFIG:Debug>:Debug>" /GL)
+    target_link_options(${TARGET} PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/FORCE:MULTIPLE> /OPT:REF /OPT:ICF /LTCG)
+
     set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP true)
     include(InstallRequiredSystemLibraries)
     install(FILES ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS} DESTINATION ${CMAKE_INSTALL_BINDIR})
@@ -65,35 +51,4 @@ if (WIN32)
       message (WARNING "Can't find MinGW runtime")
     endif()
   endif()
-
-  SET (CPACK_NSIS_DEFINES
-    "${CPACK_NSIS_DEFINES}
-    !include ${PROJECT_SOURCE_DIR}\\\\contrib\\\\nsis\\\\strrep.nsh
-    !include ${PROJECT_SOURCE_DIR}\\\\contrib\\\\nsis\\\\replaceinfile.nsh"
-  )
-
-  SET(CPACK_NSIS_EXTRA_PREINSTALL_COMMANDS "nsExec::Exec '\\\"$INSTDIR\\\\bin\\\\reindexer_server\\\" --remove'")
-  SET(CPACK_NSIS_EXTRA_INSTALL_COMMANDS
-    "${CPACK_NSIS_EXTRA_INSTALL_COMMANDS}
-    CreateDirectory \\\"$APPDATA\\\\reindexer\\\"
-    IfFileExists \\\"$APPDATA\\\\reindexer\\\\reindexer.conf\\\" skip_patch_config do_patch_config
-    do_patch_config:
-    CopyFiles \\\"$INSTDIR\\\\etc\\\\reindexer.conf.pkg\\\" \\\"$APPDATA\\\\reindexer\\\\reindexer.conf\\\"
-    !insertmacro _ReplaceInFile \\\"$APPDATA\\\\reindexer\\\\reindexer.conf\\\" \\\"/var/lib/reindexer\\\" \\\"$APPDATA\\\\reindexer\\\\db\\\"
-    !insertmacro _ReplaceInFile \\\"$APPDATA\\\\reindexer\\\\reindexer.conf\\\" \\\"/var/log/reindexer/\\\" \\\"$APPDATA\\\\reindexer\\\\log\\\\\\\"
-    !insertmacro _ReplaceInFile \\\"$APPDATA\\\\reindexer\\\\reindexer.conf\\\" \\\"/share/reindexer/\\\" \\\"$INSTDIR\\\\share\\\\reindexer\\\\\\\"
-    skip_patch_config:
-    CreateDirectory \\\"$APPDATA\\\\reindexer\\\\log\\\"
-    CreateDirectory \\\"$APPDATA\\\\reindexer\\\\db\\\"
-    nsExec::Exec 'Icacls \\\"$APPDATA\\\\reindexer\\\\*\\\" /grant \\\"(S-1-5-32-545)\\\"'
-    nsExec::Exec '\\\"$INSTDIR\\\\bin\\\\reindexer_server\\\" --install --config \\\"$APPDATA\\\\reindexer\\\\reindexer.conf\\\"'
-    nsExec::Exec 'net start reindexer'
-  ")
-
-  SET(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "nsExec::Exec '\\\"$INSTDIR\\\\bin\\\\reindexer_server\\\" --remove'")
-  SET(CPACK_NSIS_MENU_LINKS "http://127.0.0.1:9088/face" "Manage reindexer")
-  SET(CPACK_NSIS_DISPLAY_NAME "Reindexer server")
-  SET(CPACK_PACKAGE_INSTALL_DIRECTORY "reindexer")
-endif (WIN32)
-
-include(CPack)
+endif ()
