@@ -1,4 +1,19 @@
 ﻿{
+  "environments": [
+    {
+      "THIRDPARTY_HOME": "${ENV.VCPKG_ROOT}/installed/${ENV.VCPKG_TARGET_TRIPLET}"
+    },
+    { "ZSTD_INCLUDE": "${ENV.THIRDPARTY_HOME}/include" },
+    { "ZSTD_LIB_RELEASE": "${ENV.THIRDPARTY_HOME}/lib/zstd.lib" },
+    { "ZLIB_INCLUDE": "${ENV.THIRDPARTY_HOME}/include" },
+    { "ZLIB_LIB_RELEASE": "${ENV.THIRDPARTY_HOME}/lib/zlib.lib" },
+    { "LZ4_INCLUDE": "${ENV.THIRDPARTY_HOME}/include" },
+    { "LZ4_LIB_RELEASE": "${ENV.THIRDPARTY_HOME}/lib/lz4.lib" },
+    { "SNAPPY_INCLUDE": "${ENV.THIRDPARTY_HOME}/include" },
+    { "SNAPPY_LIB_RELEASE": "${ENV.THIRDPARTY_HOME}/lib/snappy.lib" },
+    { "JEMALLOC_INCLUDE": "${projectDir}/externals/jemalloc/include" },
+    { "JEMALLOC_LIB_RELEASE": "${projectDir}/externals/jemalloc/lib/${ENV.PLATFORM}/jemalloc.lib" }
+  ],
   "configurations": [
     {
       "name": "x64-Debug",
@@ -7,27 +22,9 @@
       "inheritEnvironments": [ "msvc_x64_x64" ],
       "buildRoot": "${projectDir}\\out\\build\\${name}",
       "installRoot": "${projectDir}\\out\\install\\${name}",
-      "cmakeCommandArgs": "",
+      "cmakeCommandArgs": "-DLINK_TYPE=Static",
       "buildCommandArgs": "-v",
       "ctestCommandArgs": "",
-      "variables": [
-        {
-          "name": "WITH_PYTHON",
-          "value": "False",
-          "type": "BOOL"
-        }
-      ]
-    },
-    {
-      "name": "x64-Release",
-      "generator": "Ninja",
-      "configurationType": "MinSizeRel",
-      "buildRoot": "${projectDir}\\out\\build\\${name}",
-      "installRoot": "${projectDir}\\out\\install\\${name}",
-      "cmakeCommandArgs": "",
-      "buildCommandArgs": "-v",
-      "ctestCommandArgs": "",
-      "inheritEnvironments": [ "msvc_x64_x64" ],
       "variables": [
         {
           "name": "WITH_PYTHON",
@@ -38,6 +35,40 @@
           "name": "LINK_RESOURCES",
           "value": "True",
           "type": "BOOL"
+        },
+        {
+          "name": "VCPKG_TARGET_TRIPLET",
+          "value": "x64-windows-static",
+          "type": "STRING"
+        }
+      ]
+    },
+    {
+      "name": "x64-Release",
+      "generator": "Ninja",
+      "configurationType": "RelWithDebInfo",
+      "buildRoot": "${projectDir}\\out\\build\\${name}",
+      "installRoot": "${projectDir}\\out\\install\\${name}",
+      "cmakeCommandArgs": "-DLINK_TYPE=Static",
+      "buildCommandArgs": "-v",
+      "ctestCommandArgs": "",
+      "inheritEnvironments": [ "msvc_x64_x64" ],
+      "environments": [ { "VCPKG_TARGET_TRIPLET": "x64-windows-static", "PLATFORM": "x64" } ],
+      "variables": [
+        {
+          "name": "WITH_PYTHON",
+          "value": "False",
+          "type": "BOOL"
+        },
+        {
+          "name": "LINK_RESOURCES",
+          "value": "True",
+          "type": "BOOL"
+        },
+        {
+          "name": "VCPKG_TARGET_TRIPLET",
+          "value": "x64-windows-static",
+          "type": "STRING"
         }
       ]
     },
@@ -54,6 +85,18 @@
       "inheritEnvironments": [ "linux_x64" ],
       "wslPath": "${defaultWSLPath}",
       "addressSanitizerRuntimeFlags": "detect_leaks=0",
+      "variables": []
+    },
+    {
+      "name": "x86-Debug",
+      "generator": "Ninja",
+      "configurationType": "Debug",
+      "buildRoot": "${projectDir}\\out\\build\\${name}",
+      "installRoot": "${projectDir}\\out\\install\\${name}",
+      "cmakeCommandArgs": "",
+      "buildCommandArgs": "-v",
+      "ctestCommandArgs": "",
+      "inheritEnvironments": [ "msvc_x86" ],
       "variables": []
     }
   ]

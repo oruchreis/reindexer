@@ -1,6 +1,6 @@
 #pragma once
 
-#if REINDEX_WITH_GPERFTOOLS
+#if REINDEX_WITH_GPERFTOOLS_WITH_PROFILER
 
 namespace reindexer_server {
 namespace pprof {
