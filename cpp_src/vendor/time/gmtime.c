@@ -77,8 +77,8 @@
 /*      static arrays used by gmtime to determine date and time
  *       values. Shows days from being of year.
  ***************************************************************/
-int _lpdays[] = {-1, 30, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365};
-int _days[] = {-1, 30, 58, 89, 119, 150, 180, 211, 242, 272, 303, 333, 364};
+int __lpdays[] = {-1, 30, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365};
+int __days[] = {-1, 30, 58, 89, 119, 150, 180, 211, 242, 272, 303, 333, 364};
 
 int fast_gmtime_r(const time_t *timer, struct tm *ptm) {
 	time_t ctimer = *timer; /* var to calculate with */
@@ -132,9 +132,9 @@ int fast_gmtime_r(const time_t *timer, struct tm *ptm) {
 	   and day of month (range: 1 - 31)
 	 */
 	if (isleapyear)
-		mdays = _lpdays;
+		mdays = __lpdays;
 	else
-		mdays = _days;
+		mdays = __days;
 
 	for (tmptimer = 1; mdays[tmptimer] < ptm->tm_yday; tmptimer++)
 		;

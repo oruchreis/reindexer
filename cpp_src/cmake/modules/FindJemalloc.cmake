@@ -12,7 +12,7 @@
 
 set( JEMALLOC_FOUND 0 )
 
-if ( UNIX )
+#if ( UNIX )
   FIND_PATH( JEMALLOC_INCLUDE_DIR
     NAMES
       jemalloc/jemalloc.h
@@ -24,6 +24,7 @@ if ( UNIX )
       $ENV{JEMALLOC_ROOT}
       $ENV{JEMALLOC_ROOT}/include
       ${CMAKE_SOURCE_DIR}/externals/jemalloc
+      ${CMAKE_SOURCE_DIR}/externals/jemalloc/include
   DOC
     "Specify include-directories that might contain jemalloc.h here."
   )
@@ -38,6 +39,7 @@ if ( UNIX )
       /usr/local/jemalloc/lib
       $ENV{JEMALLOC_ROOT}/lib
       $ENV{JEMALLOC_ROOT}
+      ${CMAKE_SOURCE_DIR}/externals/jemalloc/lib/$ENV{PLATFORM}
     DOC "Specify library-locations that might contain the jemalloc library here."
   )
 
@@ -52,4 +54,4 @@ if ( UNIX )
   endif ( JEMALLOC_LIBRARY )
 
   mark_as_advanced( JEMALLOC_FOUND JEMALLOC_LIBRARY JEMALLOC_EXTRA_LIBRARIES JEMALLOC_INCLUDE_DIR )
-endif (UNIX)
+#endif (UNIX)

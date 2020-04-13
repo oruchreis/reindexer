@@ -11,6 +11,15 @@ namespace alloc_ext {
 
 #if REINDEX_WITH_GPERFTOOLS && defined(_WIN32)
 bool TCMallocHooksAreAvailable() { return true; }
+
+int MallocHook_AddNewHook(MallocHook_NewHook hook) {
+	return ::MallocHook_AddNewHook(hook);
+}
+
+int MallocHook_AddDeleteHook(MallocHook_DeleteHook hook) {
+	return ::MallocHook_AddDeleteHook(hook);
+}
+
 #elif REINDEX_WITH_GPERFTOOLS
 
 using AddNewHookFn = int (*)(MallocHook_NewHook);

@@ -1,6 +1,6 @@
 #include "gperf_profiler.h"
 
-#if REINDEX_WITH_GPERFTOOLS
+#if REINDEX_WITH_GPERFTOOLS_WITH_PROFILER
 #include <gperftools/heap-profiler.h>
 #include <gperftools/malloc_extension.h>
 #include <gperftools/profiler.h>

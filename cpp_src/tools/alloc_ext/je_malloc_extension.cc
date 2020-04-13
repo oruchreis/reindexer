@@ -13,8 +13,7 @@ namespace reindexer {
 namespace alloc_ext {
 
 #if REINDEX_WITH_JEMALLOC && defined(_WIN32)
-
-int mallctl(const char* /*name*/, void* /*oldp*/, size_t* /*oldlenp*/, void* /*newp*/, size_t /*newlen*/) { return -1; }
+int mallctl(const char* name, void* oldp, size_t* oldlenp, void* newp, size_t newlen) { return je_mallctl(name, oldp, oldlenp, newp, newlen); }
 
 bool JEMallocIsAvailable() { return true; }
 
