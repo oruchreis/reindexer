@@ -38,7 +38,7 @@ void Pprof::Attach(http::Router &router) {
 }
 
 int Pprof::Profile(http::Context &ctx) {
-#if REINDEX_WITH_GPERFTOOLS
+#if REINDEX_WITH_GPERFTOOLS_WITH_PROFILER
 	long long seconds = 30;
 	std::string_view secondsParam;
 	std::string filePath = fs::JoinPath(fs::GetTempDir(), kProfileNamePrefix + ".profile");
@@ -68,7 +68,7 @@ int Pprof::Profile(http::Context &ctx) {
 }
 
 int Pprof::ProfileHeap(http::Context &ctx) {
-#if REINDEX_WITH_GPERFTOOLS
+#if REINDEX_WITH_GPERFTOOLS_WITH_PROFILER
 	if (pprof::GperfProfilerIsAvailable()) {
 		if (std::getenv("HEAPPROFILE")) {
 			char *profile = pprof::GetHeapProfile();
