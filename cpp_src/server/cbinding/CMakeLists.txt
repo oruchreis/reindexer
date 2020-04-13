@@ -5,9 +5,9 @@ project(reindexer_embedded_server)
 set(TARGET reindexer_embedded_server)
 
 add_library(${TARGET} SHARED "server_c.cc" "../../core/cbinding/reindexer_c.cc")
-list(APPEND REINDEXER_LIBRARIES reindexer_server_library reindexer ${REINDEXER_LIBRARIES})
+list(APPEND REINDEXER_LIBRARIES reindexer_server_library reindexer leveldb_lib snappy_lib ${REINDEXER_LIBRARIES})
 include_directories(${PROJECT_SOURCE_DIR})
-add_dependencies(${TARGET} reindexer_server_library)
+add_dependencies(${TARGET} reindexer_server_library leveldb_lib snappy_lib)
 
 target_link_libraries(${TARGET} ${REINDEXER_LIBRARIES})
 

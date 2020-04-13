@@ -136,6 +136,7 @@ else ()
     GIT_TAG "master"
     CMAKE_ARGS -DSNAPPY_BUILD_TESTS=OFF -DCMAKE_INSTALL_PREFIX=${CMAKE_CURRENT_BINARY_DIR}
     -DCMAKE_INSTALL_LIBDIR=${CMAKE_CURRENT_BINARY_DIR}
+    -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
     )
   include_directories (${CMAKE_CURRENT_BINARY_DIR}/include)
   link_directories(${CMAKE_CURRENT_BINARY_DIR})
@@ -535,8 +536,8 @@ if (NOT WIN32)
 endif ()
 
 add_subdirectory(server)
-#add_subdirectory(cmd/reindexer_tool)
-#add_subdirectory(cmd/reindexer_server)
+add_subdirectory(cmd/reindexer_tool)
+add_subdirectory(cmd/reindexer_server)
 add_subdirectory(core/cbinding)
 add_subdirectory(server/cbinding)
 add_subdirectory(doc)

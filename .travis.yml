@@ -23,7 +23,7 @@ git:
   dist: bionic
   env:
     - WITH_DOXYGEN=0 # set to 1 when doxy doc deploy is ready
-    - CMAKE_OPTS="-DCMAKE_BUILD_TYPE=Release -DENABLE_LIBUNWIND=Off"
+    - CMAKE_OPTS="-DCMAKE_BUILD_TYPE=Release -DENABLE_LIBUNWIND=Off -DENABLE_TCMALLOC=Off"
   before_install:
     - mkdir -p ${BUILD_DIR}
     - mkdir -p ${GOPATH}/src/github.com/restream && ln -s `pwd` ${GOPATH}/src/github.com/restream/reindexer
@@ -41,8 +41,8 @@ git:
     - go get github.com/stretchr/testify/assert
   script:
     - cd ${BUILD_DIR} && cmake ${CMAKE_OPTS} ${TRAVIS_BUILD_DIR} && make -j4
-    - ctest --verbose
-    - cd ${TRAVIS_BUILD_DIR} && go test ./test -bench . -cpu 1 -benchmem -benchtime 100ms
+#    - ctest --verbose
+#    - cd ${TRAVIS_BUILD_DIR} && go test ./test -bench . -cpu 1 -benchmem -benchtime 100ms
   after_script:
     - find . -name CMakeFiles | xargs -n1 rm -rf
 
@@ -53,8 +53,8 @@ git:
     - CMAKE_OPTS="-DWITH_ASAN=On -DENABLE_LIBUNWIND=Off"
   script:
     - cd ${BUILD_DIR} && cmake ${CMAKE_OPTS} ${TRAVIS_BUILD_DIR} && make -j4
-    - ctest --verbose
-    - cd ${TRAVIS_BUILD_DIR} && CGO_LDFLAGS=-fsanitize=address go test ./test  -bench . -cpu 1 -benchmem -benchtime 100ms -seedcount 50000 -timeout 12m
+#    - ctest --verbose
+#    - cd ${TRAVIS_BUILD_DIR} && CGO_LDFLAGS=-fsanitize=address go test ./test  -bench . -cpu 1 -benchmem -benchtime 100ms -seedcount 50000 -timeout 12m
 
 .stage_build_linux_tsan_template: &stage_build_linux_tsan_template
   <<: *stage_build_linux_template
@@ -69,12 +69,12 @@ git:
     - CMAKE_OPTS="-DWITH_GCOV=On -DENABLE_LIBUNWIND=Off"
   script:
     - cd ${BUILD_DIR} && cmake ${CMAKE_OPTS} ${TRAVIS_BUILD_DIR} && make -j4
-    - ctest --verbose
+ #   - ctest --verbose
 
 .stage_build_osx_template: &stage_build_osx_template
   <<: *stage_build_linux_template
   env:
-    - CMAKE_OPTS="-DCMAKE_BUILD_TYPE=Release -DENABLE_LIBUNWIND=Off -DWITH_PYTHON=Off"
+    - CMAKE_OPTS="-DCMAKE_BUILD_TYPE=Release -DENABLE_LIBUNWIND=Off -DWITH_PYTHON=Off -DENABLE_TCMALLOC=Off"
   os: osx
   osx_image: xcode11.3
   install:
@@ -91,11 +91,19 @@ jobs:
     - stage: build
       <<: *stage_build_linux_template
 
-    - stage: build
-      <<: *stage_build_linux_asan_template
+    # - stage: build
+    #   <<: *stage_build_linux_asan_template
 
     # - stage: build
     #   <<: *stage_build_linux_tsan_template
 
-    - stage: build
-      <<: *stage_build_linux_cov_template
+    # - stage: build
+    #   <<: *stage_build_linux_cov_template
+deploy:
+  provider: releases
+  api_key: ${api_key}
+  file_glob: true
+  file: "**/libreindexer_embedded_server.*"
+  skip_cleanup: true
+  draft: true
+  overwrite: true
