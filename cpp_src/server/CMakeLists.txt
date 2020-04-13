@@ -15,7 +15,8 @@ file(WRITE ${PROJECT_BINARY_DIR}/swagger_replace.cmake
 )
 
 file(WRITE ${PROJECT_BINARY_DIR}/make_swagger.cmake
-    "file(
+    "if (NOT EXISTS \"${PROJECT_BINARY_DIR}/swagger/\")
+    file(
 	DOWNLOAD \"https://codeload.github.com/swagger-api/swagger-ui/tar.gz/${SWAGGER_VERSION}\"
 	\"${PROJECT_BINARY_DIR}/swagger.tar.gz\"
      )
@@ -46,7 +47,8 @@ file(WRITE ${PROJECT_BINARY_DIR}/make_swagger.cmake
        COMMAND ${CMAKE_COMMAND} -E remove_directory \"${PROJECT_BINARY_DIR}/swagger-ui-${SWAGGER_VERSION}\"
        RESULT_VARIABLE ret
      )
-     file(REMOVE \"${PROJECT_BINARY_DIR}/swagger.tar.gz\")"
+     file(REMOVE \"${PROJECT_BINARY_DIR}/swagger.tar.gz\")
+     endif()"
 )
 
 if (FACE_STAGING)
@@ -72,7 +74,8 @@ file(WRITE ${PROJECT_BINARY_DIR}/make_face.cmake
 else()
 
 file(WRITE ${PROJECT_BINARY_DIR}/make_face.cmake
-    "file(
+    "if (NOT EXISTS \"${PROJECT_BINARY_DIR}/face/\")
+    file(
   DOWNLOAD \"https://codeload.github.com/restream/reindexer-face-dist/tar.gz/${FACE_BRANCH}\"
 	\"${PROJECT_BINARY_DIR}/face.tar.gz\"
      )
@@ -88,7 +91,8 @@ file(WRITE ${PROJECT_BINARY_DIR}/make_face.cmake
 	 message(FATAL_ERROR \"Could not untar 'face.tar.gz'\")
      endif()
      file(RENAME \"${PROJECT_BINARY_DIR}/reindexer-face-dist-${FACE_BRANCH}\" \"${PROJECT_BINARY_DIR}/face\")
-     file(REMOVE \"${PROJECT_BINARY_DIR}/face.tar.gz\")"
+     file(REMOVE \"${PROJECT_BINARY_DIR}/face.tar.gz\")
+     endif()"
 )
 endif ()
 if (LINK_RESOURCES)
@@ -140,8 +144,8 @@ include_directories(${PROJECT_SOURCE_DIR})
 
 if (LINK_RESOURCES)
     add_dependencies(${TARGET} reindexer_server_resources)
-    target_link_libraries(${TARGET} reindexer_server_resources)
-    target_link_libraries(${TARGET} reindexer)
+    target_link_libraries(${TARGET} PRIVATE reindexer_server_resources)
+    target_link_libraries(${TARGET} PRIVATE reindexer)
 endif()
 if (ENABLE_GRPC)
     add_dependencies(${TARGET} reindexer_grpc_library)

@@ -1,6 +1,6 @@
 #include "gperf_profiler.h"
 
-#if REINDEX_WITH_GPERFTOOLS
+#if REINDEX_WITH_GPERFTOOLS_WITH_PROFILER
 #include <gperftools/heap-profiler.h>
 #include <gperftools/malloc_extension.h>
 #include <gperftools/profiler.h>
@@ -15,7 +15,7 @@
 
 void ProfilerRegisterThread() { ::ProfilerRegisterThread(); }
 
-int ProfilerStart(const char *fname) { return ::ProfilerStart(); }
+int ProfilerStart(const char *fname) { return ::ProfilerStart(fname); }
 
 void ProfilerStop() { ::ProfilerStop(); }
 
@@ -90,9 +90,7 @@ bool GperfProfilerIsAvailable() {
 		   (getProfilerStopFn() != nullptr) && (getGetHeapProfileFn() != nullptr);
 }
 
-#endif  //_WIN32
-
 }  // namespace pprof
 }  // namespace reindexer_server
-
+#endif  //_WIN32
 #endif  // REINDEX_WITH_GPERFTOOLS

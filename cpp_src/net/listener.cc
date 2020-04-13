@@ -198,7 +198,7 @@ void Listener::clone(std::shared_ptr<Shared> shared) {
 	{
 		ev::dynamic_loop loop;
 		Listener listener(loop, shared);
-#if REINDEX_WITH_GPERFTOOLS
+#if REINDEX_WITH_GPERFTOOLS_WITH_PROFILER
 		if (alloc_ext::TCMallocIsAvailable()) {
 			reindexer_server::pprof::ProfilerRegisterThread();
 		}

@@ -18,22 +18,30 @@
 #  GPERFTOOLS_INCLUDE_DIR        The location of Gperftools headers
 
 find_library(GPERFTOOLS_TCMALLOC
-  NAMES tcmalloc
-  HINTS ${Gperftools_ROOT_DIR}/lib)
+  NAMES libtcmalloc.a tcmalloc libtcmalloc_minimal
+  HINTS ${Gperftools_ROOT_DIR}/lib
+  PATHS 
+    ${CMAKE_SOURCE_DIR}/externals/tcmalloc/lib)
 
 find_library(GPERFTOOLS_PROFILER
-  NAMES profiler
+  NAMES libprofiler.a profiler
   HINTS ${Gperftools_ROOT_DIR}/lib)
 
 find_library(GPERFTOOLS_TCMALLOC_AND_PROFILER
-  NAMES tcmalloc_and_profiler
+  NAMES libtcmalloc_and_profiler.a tcmalloc_and_profiler
   HINTS ${Gperftools_ROOT_DIR}/lib)
 
 find_path(GPERFTOOLS_INCLUDE_DIR
   NAMES gperftools/heap-profiler.h
-  HINTS ${Gperftools_ROOT_DIR}/include)
+  HINTS ${Gperftools_ROOT_DIR}/include
+  PATHS 
+    ${CMAKE_SOURCE_DIR}/externals/tcmalloc/include)
 
+if (${GPERFTOOLS_TCMALLOC_AND_PROFILER})
 set(GPERFTOOLS_LIBRARIES ${GPERFTOOLS_TCMALLOC_AND_PROFILER})
+else()
+set(GPERFTOOLS_LIBRARIES ${GPERFTOOLS_TCMALLOC})
+endif()
 
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(

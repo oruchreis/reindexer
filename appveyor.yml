@@ -3,50 +3,74 @@ version: '{build}'
 # Uncomment this to enable the fast build environment if your account does not
 # support it automatically:
 image: Visual Studio 2017
+skip_non_tags: true
 
 environment:
   matrix:
-    - BUILD_TYPE: Release
-      COMPILER: MSVC17
+    - BUILD_TYPE: RelWithDebInfo
+      COMPILER: MSVC19
       PLATFORM: x64
-      APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2017
-
-    - BUILD_TYPE: Release
-      COMPILER: MSVC17
-      PLATFORM: Win32
-      APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2017
-
-    - BUILD_TYPE: Release
-      COMPILER: MinGW-w64
-      PLATFORM: x64
-      TOOLCHAIN: x86_64-7.3.0-posix-seh-rt_v5-rev0
-      APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
-
-    - BUILD_TYPE: Release
-      COMPILER: MinGW
-      PLATFORM: Win32
-      TOOLCHAIN: i686-8.1.0-posix-dwarf-rt_v6-rev0
       APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
 
+    - BUILD_TYPE: RelWithDebInfo
+      COMPILER: MSVC19
+      PLATFORM: Win32
+      APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
+
+#    - BUILD_TYPE: Release
+#      COMPILER: MinGW-w64
+#      PLATFORM: x64
+#      TOOLCHAIN: x86_64-7.3.0-posix-seh-rt_v5-rev0
+#      APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
+#
+#    - BUILD_TYPE: Release
+#      COMPILER: MinGW
+#      PLATFORM: Win32
+#      TOOLCHAIN: i686-6.3.0-posix-dwarf-rt_v5-rev1
+#      APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
+cache: 
+  - c:\tools\vcpkg
+  - '%appveyor_build_folder%\build\cpp_src\rocksdb_lib-prefix'
+  - '%appveyor_build_folder%\build\cpp_src\leveldb_lib-prefix'
+  - '%appveyor_build_folder%\build\cpp_src\snappy_lib-prefix'
 build_script:
+  - cd "C:\Tools\vcpkg"
+  - git fetch --all
+  - git reset --hard HEAD
+  - git clean -f -d
+  - git pull
+#  - vcpkg update
+  - .\bootstrap-vcpkg.bat
+  - vcpkg update
+  - vcpkg upgrade
+  - cd %appveyor_build_folder%
   - git describe --tags
-  - mkdir build
-  - cd build
-  - if [%COMPILER%]==[MSVC17] if [%PLATFORM%]==[Win32] cmake -G "Visual Studio 15 2017" ..
-  - if [%COMPILER%]==[MSVC17] if [%PLATFORM%]==[x64] cmake -G "Visual Studio 15 2017 Win64" ..
-  - if [%COMPILER%]==[MinGW] set PATH=C:\MinGW-w64\%TOOLCHAIN%\mingw32\bin;%PATH:C:\Program Files\Git\usr\bin;=%
-  - if [%COMPILER%]==[MinGW-w64] set PATH=C:\MinGW-w64\%TOOLCHAIN%\mingw64\bin;%PATH:C:\Program Files\Git\usr\bin;=%
-  - if [%COMPILER%]==[MinGW] cmake -G "MinGW Makefiles" -DCMAKE_PREFIX_PATH=C:\mingw-w64\%TOOLCHAIN% -DCMAKE_CXX_STANDARD=17 -DCMAKE_BUILD_TYPE=%BUILD_TYPE% ..
-  - if [%COMPILER%]==[MinGW-w64] cmake -G "MinGW Makefiles" -DCMAKE_PREFIX_PATH=C:\mingw-w64\%TOOLCHAIN% -DCMAKE_CXX_STANDARD=17 -DCMAKE_BUILD_TYPE=%BUILD_TYPE% ..
+  - if not exist "build" mkdir build
+  - cd build    
+  - set VCPKG_ROOT=C:\Tools\vcpkg
+  - if [%PLATFORM%]==[x64] set VCPKG_TARGET_TRIPLET=x64-windows-static
+  - if [%PLATFORM%]==[Win32] set VCPKG_TARGET_TRIPLET=x86-windows-static  
+  - vcpkg install zlib zstd bzip2 lz4 crc32c snappy[*] --triplet %VCPKG_TARGET_TRIPLET% --recurse
+  - dir "%VCPKG_ROOT%\installed\%VCPKG_TARGET_TRIPLET%\lib\"
+  - set PLATFORM=%PLATFORM%
+  - set THIRDPARTY_HOME=%VCPKG_ROOT%\installed\%VCPKG_TARGET_TRIPLET%
+  - set ZSTD_INCLUDE=%THIRDPARTY_HOME%\include
+  - set ZSTD_LIB_RELEASE=%THIRDPARTY_HOME%\lib\zstd.lib
+  - set ZLIB_INCLUDE=%THIRDPARTY_HOME%\include
+  - set ZLIB_LIB_RELEASE=%THIRDPARTY_HOME%\lib\zlib.lib
+  - set LZ4_INCLUDE=%THIRDPARTY_HOME%\include
+  - set LZ4_LIB_RELEASE=%THIRDPARTY_HOME%\lib\lz4.lib
+  - set SNAPPY_INCLUDE=%THIRDPARTY_HOME%\include
+  - set SNAPPY_LIB_RELEASE=%THIRDPARTY_HOME%\lib\snappy.lib
+  - set JEMALLOC_INCLUDE=%appveyor_build_folder%\externals\jemalloc\include\
+  - set JEMALLOC_LIB_RELEASE=%appveyor_build_folder%\externals\jemalloc\lib\%PLATFORM%\jemalloc.lib
+  - cmake -G "Visual Studio 16 2019" -A %PLATFORM% -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%/scripts/buildsystems/vcpkg.cmake -DCMAKE_BUILD_TYPE=%BUILD_TYPE% -DVCPKG_TARGET_TRIPLET=%VCPKG_TARGET_TRIPLET% -DLINK_TYPE=Static ..
 
   - cmake --build . --config %BUILD_TYPE%
-  - cmake --build . --config %BUILD_TYPE% --target face
-  - cmake --build . --config %BUILD_TYPE% --target swagger
-  - cpack
 
 artifacts:
-  - path: build/*.exe
-    name: reindexer_server
+  - path: build\cpp_src\server\cbinding\**\reindexer_embedded_server.*
+    name: reindexer_embedded_server
 
 
 #test_script:

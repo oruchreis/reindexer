@@ -97,7 +97,7 @@ public:
 				auto reqArgs = sizeof...(Args);
 				if (reqArgs > ctx.call->args.size())
 					return Error(errParams, "Invalid args of %s call expected %d, got %d", CmdName(ctx.call->cmd), int(sizeof...(Args)),
-								 int(ctx.call->args.size()));
+								 int(ctx.call->args.size()));*/
 				return func_wrapper(obj, func, ctx);
 			};
 			handlers_[cmd] = {wrapper, object};
