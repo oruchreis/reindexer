@@ -124,24 +124,26 @@ endif ()
 
 # snappy
 ########
-find_package(Snappy)
-if (SNAPPY_FOUND)
-  include_directories(SYSTEM ${SNAPPY_INCLUDE_DIR})
-  list(APPEND REINDEXER_LIBRARIES ${SNAPPY_LIBRARIES})
-else ()
-  message (STATUS "Snappy not found. Will download it")
+#find_package(Snappy)
+#if (SNAPPY_FOUND)
+#  include_directories(SYSTEM ${SNAPPY_INCLUDE_DIR})  
+#  STRING(REGEX REPLACE "[.]so$" ".a" STATIC_SNAPPY_LIB ${SNAPPY_LIBRARIES})
+#  list(APPEND REINDEXER_LIBRARIES ${STATIC_SNAPPY_LIB})
+#else ()
+#  message (STATUS "Snappy not found. Will download it")
   ExternalProject_Add(
     snappy_lib
     GIT_REPOSITORY "https://github.com/google/snappy.git"
     GIT_TAG "master"
     CMAKE_ARGS -DSNAPPY_BUILD_TESTS=OFF -DCMAKE_INSTALL_PREFIX=${CMAKE_CURRENT_BINARY_DIR}
     -DCMAKE_INSTALL_LIBDIR=${CMAKE_CURRENT_BINARY_DIR}
-    -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+    -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}    
+    "-DCMAKE_CXX_FLAGS=-fPIC -I${CMAKE_CURRENT_BINARY_DIR}/include"
     )
   include_directories (${CMAKE_CURRENT_BINARY_DIR}/include)
   link_directories(${CMAKE_CURRENT_BINARY_DIR})
   list(APPEND REINDEXER_LIBRARIES snappy)
-endif ()
+#endif ()
 
 # storage
 #########
@@ -200,9 +202,9 @@ endif()
 find_library(LevelDB_LIBRARY NAMES ${LevelDB_NAMES} leveldb HINTS $ENV{LEVELDB_ROOT}/lib)
 find_path(LevelDB_INCLUDE_DIR NAMES leveldb/db.h HINTS $ENV{LEVELDB_ROOT}/include /opt/local/include /usr/local/include /usr/include)
 
-if (NOT LevelDB_LIBRARY OR NOT LevelDB_INCLUDE_DIR)
-  # Leveldb not found. Download it
-  message (STATUS "LevelDB not found. Will download it")
+#if (NOT LevelDB_LIBRARY OR NOT LevelDB_INCLUDE_DIR)
+#  # Leveldb not found. Download it
+#  message (STATUS "LevelDB not found. Will download it")
   ExternalProject_Add(
     leveldb_lib
     GIT_REPOSITORY "https://github.com/restream/leveldb.git"
@@ -222,11 +224,12 @@ if (NOT LevelDB_LIBRARY OR NOT LevelDB_INCLUDE_DIR)
   list(APPEND REINDEXER_LINK_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR})
   list(INSERT REINDEXER_LIBRARIES 1 leveldb)
   add_dependencies(reindexer leveldb_lib)
-else ()
-  message (STATUS "Found LevelDB: ${LevelDB_LIBRARY}")
-  include_directories(SYSTEM ${LevelDB_INCLUDE_DIR})
-  list(INSERT REINDEXER_LIBRARIES 1 ${LevelDB_LIBRARY})
-endif ()
+#else ()
+#  message (STATUS "Found LevelDB: ${LevelDB_LIBRARY}")
+#  include_directories(SYSTEM ${LevelDB_INCLUDE_DIR})
+#  STRING(REGEX REPLACE "[.]so$" ".a" STATIC_LEVELDB_LIB ${LevelDB_LIBRARY})
+#  list(INSERT REINDEXER_LIBRARIES 1 ${STATIC_LEVELDB_LIB})
+#endif ()
 add_definitions(-DREINDEX_WITH_LEVELDB)
 
 # System libraries
@@ -538,7 +541,7 @@ endif ()
 add_subdirectory(server)
 add_subdirectory(cmd/reindexer_tool)
 add_subdirectory(cmd/reindexer_server)
-add_subdirectory(core/cbinding)
+#add_subdirectory(core/cbinding)
 add_subdirectory(server/cbinding)
 add_subdirectory(doc)
 

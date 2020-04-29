@@ -3,6 +3,7 @@ version: '{build}'
 # Uncomment this to enable the fast build environment if your account does not
 # support it automatically:
 image: Visual Studio 2017
+skip_non_tags: true
 
 environment:
   matrix:

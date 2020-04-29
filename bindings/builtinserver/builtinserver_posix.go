@@ -5,5 +5,5 @@ package builtinserver
 
 // #cgo CXXFLAGS: -std=c++11 -g -O2 -Wall -Wpedantic -Wextra -I../../cpp_src 
 // #cgo CFLAGS: -std=c99 -g -O2 -Wall -Wpedantic -Wno-unused-variable -I../../cpp_src 
-// #cgo LDFLAGS: -L${SRCDIR}/../../build/cpp_src/ -L${SRCDIR}/../../build/cpp_src/server/ -lreindexer_server_library  -lreindexer -lleveldb -lsnappy -lpthread -lrt -ldl -lunwind -lreindexer_server_resources -lm -lstdc++ -g
+// #cgo LDFLAGS: -L${SRCDIR}/../../build/cpp_src/ -L${SRCDIR}/../../build/cpp_src/server/ -lreindexer_server_library  -lreindexer -lleveldb -lpthread -lrt -ldl -lunwind -lreindexer_server_resources -lm -lstdc++ -g
 import "C"

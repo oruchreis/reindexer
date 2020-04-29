@@ -3,6 +3,8 @@ dist: trusty
 
 language: cpp
 
+if: tag IS present OR type = api
+
 env:
   global:
     - BUILD_DIR=${TRAVIS_BUILD_DIR}/build
