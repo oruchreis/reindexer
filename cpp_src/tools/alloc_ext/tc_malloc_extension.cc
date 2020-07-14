@@ -20,6 +20,9 @@ using GetInstanceFn = MallocExtension* (*)();
 
 static GetInstanceFn getGetInstanceFn() {
 	static auto get_instance_fn = reinterpret_cast<GetInstanceFn>(dlsym(RTLD_DEFAULT, "_ZN15MallocExtension8instanceEv"));
+	if (get_instance_fn == nullptr)
+		get_instance_fn = MallocExtension::instance;
+
 	return get_instance_fn;
 }
 

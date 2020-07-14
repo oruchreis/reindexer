@@ -1,0 +1,192 @@
+sudo: required
+dist: focal
+
+language: cpp
+
+if: tag IS present OR type = api
+
+env:
+  global:
+    - BUILD_DIR=${TRAVIS_BUILD_DIR}/build
+    - GOPATH=$HOME/.gopath/
+
+cache:
+  directories:
+    - /opt/musl
+    - /tmp/deps
+    - $HOME/Library/Caches/Homebrew
+    - /usr/local/Homebrew    
+
+before_cache:
+  - if [ "${TRAVIS_OS_NAME}" = "osx" ]; then brew cleanup; fi
+# Credit https://discourse.brew.sh/t/best-practice-for-homebrew-on-travis-brew-update-is-5min-to-build-time/5215/9
+# Cache only .git files under "/usr/local/Homebrew" so "brew update" does not take 5min every build
+  - if [ "${TRAVIS_OS_NAME}" = "osx" ]; then find /usr/local/Homebrew \! -regex ".+\.git.+" -delete; fi
+
+git:
+  depth: 100
+
+addons:
+  apt:
+    sources:
+    - sourceline: 'ppa:ubuntu-toolchain-r/test'
+    packages:
+    - gcc-9
+    - g++-9
+  homebrew:
+    packages:
+    - cmake
+    - gnu-sed
+    - flex
+    - gettext
+    - autoconf
+    - automake
+    - libtool
+    - texinfo
+
+.stage_build_linux_template: &stage_build_linux_template
+  async: true
+  fail_fast: true
+  os: linux
+  dist: focal
+  env:
+    - BUILD_TYPE=MinSizeRel
+    - ENABLE_LIBUNWIND=1
+    - ENABLE_TCMALLOC=1
+    - ENABLE_JEMALLOC=0    
+    - WITH_PYTHON=0
+    - WITH_DOXYGEN=0 # set to 1 when doxy doc deploy is ready
+    - LIBUNWIND_LIB=/usr/lib/x86_64-linux-gnu/libunwind.a
+    - SECTION_FLAGS="-ffunction-sections -fdata-sections -rdynamic -Wl,--gc-sections"
+    - SED="sed"
+  before_install:
+    - mkdir -p ${BUILD_DIR}
+    - mkdir -p ${GOPATH}/src/github.com/restream && ln -s `pwd` ${GOPATH}/src/github.com/restream/reindexer
+  install:
+    - sudo apt-get -qq update > /dev/null && sudo apt-get -qq install -y -f build-essential binutils automake autoconf autopoint curl git flex python3-pip libunwind-dev    
+    - sudo apt remove --purge --auto-remove gcc-5 g++-5 gcc-6 g++-6 gcc-7 g++-7 cmake && sudo rm -rf /usr/local/cmake*
+    - sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 10
+    - sudo update-alternatives --install /usr/bin/cc cc /usr/bin/gcc-9 10
+    - sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-9 10
+    - sudo update-alternatives --install /usr/bin/c++ c++ /usr/bin/g++-9 10
+    - sudo update-alternatives --install /usr/bin/ar ar /usr/bin/gcc-ar-9 10
+    - sudo update-alternatives --install /usr/bin/nm nm /usr/bin/gcc-nm-9 10
+    - cc --version
+    - if [[ ! -d "/tmp/deps/cmake" ]]; then mkdir -p "/tmp/deps/cmake" && cd /tmp/deps/cmake && wget https://cmake.org/files/v3.17/cmake-3.17.3-Linux-x86_64.sh && sudo sh cmake-3.17.3-Linux-x86_64.sh --skip-license --prefix=/tmp/deps/cmake >/dev/null; fi && sudo ln -s /tmp/deps/cmake /usr/local/cmake && sudo ln -s /tmp/deps/cmake/bin/cmake /usr/local/bin/cmake && export PATH=/usr/local/cmake:/usr/local/cmake/bin:$PATH && cmake --version        
+    - export CXX="g++-9" CC="gcc-9"
+    - export AR="gcc-ar-9"
+    - export NM="gcc-nm-9"
+    - export RANLIB="gcc-ranlib-9"
+    - curl https://raw.githubusercontent.com/travis-ci/gimme/master/gimme > ~/gimme && chmod +x ~/gimme && ~/gimme 1.9
+  before_script:        
+    - export REINDEXER_OPTS="-DMUSL=1 -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DENABLE_LIBUNWIND=${ENABLE_LIBUNWIND} -DENABLE_JEMALLOC=${ENABLE_JEMALLOC} -DENABLE_TCMALLOC=${ENABLE_TCMALLOC} -DWITH_PYTHON=${WITH_PYTHON}"
+    - if [[ ! -d "/opt/musl/bin" ]]; then git clone https://github.com/richfelker/musl-cross-make.git /tmp/musl-cross-make --depth 1 && cd /tmp/musl-cross-make && cp -fv ${TRAVIS_BUILD_DIR}/externals/musl/config.mak ./ && echo "building musl, hold on... stdout is disabled." && OUTPUT="/opt/musl" make --silent --no-print-directory -j4 2> >(xargs -I{} echo -n X>&2) | xargs -n100 | xargs -I{} echo -n "=" && sudo make install; fi
+    - export TOOLCHAIN=/opt/musl && export HOST=x86_64-linux-musl && export CC=${TOOLCHAIN}/bin/${HOST}-gcc && export CXX=${TOOLCHAIN}/bin/${HOST}-g++ && export AR=${TOOLCHAIN}/bin/${HOST}-ar && export NM=${TOOLCHAIN}/bin/${HOST}-nm && export RANLIB=${TOOLCHAIN}/bin/${HOST}-ranlib && export LD=${TOOLCHAIN}/bin/${HOST}-ld && export STRIP=${TOOLCHAIN}/bin/${HOST}-strip
+    - export CFLAGS="-g0 -fPIC ${SECTION_FLAGS} -I${TOOLCHAIN}/x86_64-linux-musl/include" && export CXXFLAGS="-g0 -fPIC ${SECTION_FLAGS} -I${TOOLCHAIN}/x86_64-linux-musl/include"
+    - export LD_LIBRARY_PATH="${TOOLCHAIN}/x86_64-linux-musl/lib" && export LDFLAGS="-L${LD_LIBRARY_PATH}"
+    - export COMMON_MAKE_ARGS=(CC=${CC} CXX=${CXX} AR=${AR} RANLIB=${RANLIB} NM=${NM} LD=${LD} CFLAGS=${CFLAGS} CXXFLAGS=${CXXFLAGS})
+    - export COMMON_CMAKE_ARGS=(--host=${HOST} -DCMAKE_CXX_FLAGS="-g0 -fPIC ${SECTION_FLAGS}" -DCMAKE_C_FLAGS="-g0 -fPIC ${SECTION_FLAGS}" -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_FIND_ROOT_PATH=${TOOLCHAIN}/${HOST} -DCMAKE_SYSROOT=${TOOLCHAIN}/${HOST} -DCMAKE_AR=${AR} -DCMAKE_RANLIB=${RANLIB} -DCMAKE_NM=${NM} -DCMAKE_LINKER=${LD})
+#    - if [[ ! -d "/tmp/deps/googletest/.git" ]]; then git clone https://github.com/google/googletest.git /tmp/deps/googletest --depth 1; fi && cd /tmp/deps/googletest && git pull && cmake -DBUILD_GMOCK=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-std=c++11" --host=x86_64-linux-musl . && make --silent --no-print-directory -j4 && sudo make install VERBOSE=1
+#    - if [[ ! -d "/tmp/deps/googlebench/.git" ]]; then git clone --branch v1.4.0 https://github.com/google/benchmark.git /tmp/deps/googlebench --depth 1; fi && cd /tmp/deps/googlebench && cmake -DBENCHMARK_ENABLE_TESTING=Off -DCMAKE_BUILD_TYPE=Release --host=x86_64-linux-musl . && make -j4 && sudo make install VERBOSE=1
+    - if [[ ${ENABLE_TCMALLOC} -eq 1 ]]; then if [[ ! -d "/tmp/deps/googleperftools/.git" ]]; then git clone https://github.com/gperftools/gperftools.git /tmp/deps/googleperftools --depth 1; fi && cd /tmp/deps/googleperftools && git pull && ./autogen.sh && ./configure --disable-shared --enable-libunwind=no --enable-frame-pointers --host=${HOST} ${COMMON_MAKE_ARGS} && make --silent --no-print-directory -j4 && sudo make install VERBOSE=1; fi
+    - if [[ ! -d "/tmp/deps/zlib/.git" ]]; then git clone https://github.com/madler/zlib.git /tmp/deps/zlib; fi && cd /tmp/deps/zlib && ./configure --static && make --silent --no-print-directory libz.a -j4 ${COMMON_MAKE_ARGS} && sudo make install libz.a VERBOSE=1 && sudo rm -rf /usr/local/lib/libz.so* /usr/local/lib/libz.dylib* 
+    - if [[ ! -d "/tmp/deps/bzip2/.git" ]]; then git clone https://sourceware.org/git/bzip2.git /tmp/deps/bzip2; fi && cd /tmp/deps/bzip2 && git pull && make --silent --no-print-directory libbz2.a -j4 ${COMMON_MAKE_ARGS} && sudo cp -fv ./libbz2.a /usr/local/lib/ && sudo rm -rf /usr/local/lib/libbz2.so* /usr/local/lib/libbz2.dylib*
+    - if [[ ! -d "/tmp/deps/lz4/.git" ]]; then git clone --branch master https://github.com/lz4/lz4.git /tmp/deps/lz4 --depth 1; fi && cd /tmp/deps/lz4/lib && git pull && make --silent --no-print-directory lib BUILD_SHARED=no ${COMMON_MAKE_ARGS} -j4 && sudo cp -fv lib/liblz4.a /usr/local/lib/ && sudo rm -rf /usr/local/lib/liblz4.so* /usr/local/lib/liblz4.dylib*
+    - if [[ ! -d "/tmp/deps/zstd/.git" ]]; then git clone --branch master https://github.com/facebook/zstd.git /tmp/deps/zstd --depth 1 && cd /tmp/deps/zstd && mkdir -p build/cmake/build; fi && cd /tmp/deps/zstd && git pull && cd build/cmake/build && cmake -DZSTD_BUILD_TESTS=OFF -DZSTD_BUILD_PROGRAMS=OFF -DZSTD_BUILD_STATIC=ON -DZSTD_BUILD_SHARED=OFF ${COMMON_CMAKE_ARGS} -DCMAKE_BUILD_TYPE=MinSizeRel .. && make -j4 && sudo make install VERBOSE=1 && sudo rm -rf /usr/local/lib/libzstd.so* /usr/local/lib/libzstd.dylib*
+    - if [[ ! -d "/tmp/deps/liblzma/.git" ]]; then git clone https://github.com/kobolabs/liblzma.git /tmp/deps/liblzma --depth 1 && cd /tmp/deps/liblzma && ./autogen.sh --host=${HOST}; fi && cd /tmp/deps/liblzma && git pull && ./configure --disable-shared ${COMMON_MAKE_ARGS} && make --silent --no-print-directory -j4 && sudo make install
+    - if [[ ! -d "/tmp/deps/crc32c/.git" ]]; then git clone https://github.com/google/crc32c.git /tmp/deps/crc32c --depth 1 && mkdir -p /tmp/deps/crc32c/build; fi && cd /tmp/deps/crc32c/build && git pull && cmake -DCRC32C_BUILD_TESTS=0 -DCRC32C_BUILD_BENCHMARKS=0 -DCRC32C_USE_GLOG=0 ${COMMON_CMAKE_ARGS} -DCMAKE_BUILD_TYPE=MinSizeRel .. && make --silent --no-print-directory -j4 && sudo make install VERBOSE=1
+    - if [[ ! -d "/tmp/deps/snappy/.git" ]]; then git clone https://github.com/google/snappy.git /tmp/deps/snappy --depth 1 && mkdir -p /tmp/deps/snappy/build; fi && cd /tmp/deps/snappy/build && git pull && cmake -DSNAPPY_BUILD_TESTS=OFF ${COMMON_CMAKE_ARGS} -DCMAKE_BUILD_TYPE=MinSizeRel .. && make --silent --no-print-directory -j4 && sudo make install VERBOSE=1
+    - if [[ ${ENABLE_LIBUNWIND} -eq 1 && ! -z "${LIBUNWIND_LIB}" ]]; then JEMALLOC_ARGS="--enable-prof-libunwind --with-static-libunwind=${LIBUNWIND_LIB}" ; fi
+    - if [[ ${ENABLE_JEMALLOC} -eq 1 ]]; then if [[ ! -d "/tmp/deps/jemalloc/.git" ]]; then git clone --branch master https://github.com/jemalloc/jemalloc.git /tmp/deps/jemalloc && cd /tmp/deps/jemalloc && ./autogen.sh --host=${HOST}; fi && cd /tmp/deps/jemalloc && git pull && ./configure --disable-initial-exec-tls $JEMALLOC_ARGS EXTRA_CFLAGS="-g1" EXTRA_CXXFLAGS="-g1" --without-export --disable-libdl --disable-shared --enable-xmalloc ${COMMON_MAKE_ARGS} && make --silent --no-print-directory build_lib_static -j4 && sudo make install VERBOSE=1 && sudo rm -rf /usr/local/lib/libjemalloc.so* /usr/local/lib/libjemalloc.a && sudo mv /usr/local/lib/libjemalloc_pic.a /usr/local/lib/libjemalloc.a; fi
+    - if [[ ! -d "/tmp/deps/leveldb/.git" ]]; then git clone https://github.com/restream/leveldb.git /tmp/deps/leveldb --depth 1; fi && cd /tmp/deps/leveldb && git pull    
+    - if ! grep -q "link_directories(/usr/local/lib)" CMakeLists.txt; then 
+        ${SED} -i '/check_library_exists[(]crc32c crc32c_value/i\link_directories(/usr/local/lib)\ninclude_directories(/usr/local/include)' CMakeLists.txt &&
+        ${SED} -i '/check_library_exists[(]tcmalloc malloc/a\set(HAVE_SNAPPY 1)\nset(HAVE_CRC32C 1)' CMakeLists.txt &&
+        ${SED} -i 's/target_link_libraries(leveldb crc32c)/target_link_libraries(leveldb libcrc32c.a)/g' CMakeLists.txt &&
+        ${SED} -i 's/target_link_libraries(leveldb snappy)/target_link_libraries(leveldb libsnappy.a)/g' CMakeLists.txt &&
+        cat CMakeLists.txt;
+      fi
+    - cd build && cmake -DLEVELDB_BUILD_TESTS=OFF -DLEVELDB_BUILD_BENCHMARKS=OFF ${COMMON_CMAKE_ARGS} -DCMAKE_BUILD_TYPE=MinSizeRel .. && make -j4 && sudo make install VERBOSE=1
+    - if [[ ! -d "/tmp/deps/rocksdb/.git" ]]; then git clone --branch v6.10.2 https://github.com/facebook/rocksdb.git /tmp/deps/rocksdb --depth 1 && mkdir -p /tmp/deps/rocksdb/build; fi && cd /tmp/deps/rocksdb/build && git pull && cmake -DPORTABLE=1 -DWITH_MD_LIBRARY=0 -DROCKSDB_BUILD_SHARED=0 -DWITH_GFLAGS=0 -DWITH_JEMALLOC=${ENABLE_JEMALLOC} -DWITH_SNAPPY=1 -DWITH_LZ4=1 -DWITH_ZSTD=1 -DWITH_ZLIB=1 -DWITH_BZ2=1 -DWITH_BENCHMARK_TOOLS=0 -DWITH_TOOLS=0 -DWITH_CORE_TOOLS=0 -DWITH_TESTS=0 -DCMAKE_POSITION_INDEPENDENT_CODE=1 ${COMMON_CMAKE_ARGS} -DCMAKE_BUILD_TYPE=MinSizeRel -DUSE_RTTI=OFF -DWITH_RUNTIME_DEBUG=OFF -DWITH_JNI=OFF .. && make --silent --no-print-directory -j4 && sudo make install VERBOSE=1
+    - for lib in z bz2 lz4 zstd lzma crc32c snappy unwind jemalloc leveldb rocksdb ;do sudo du -h "/usr/local/lib/lib$lib.a" "/usr/lib/x86_64-linux-gnu/lib$lib.a" 2> /dev/null || true; done
+#    - if [[ ${WITH_DOXYGEN} -eq 1 ]]; then git clone https://github.com/doxygen/doxygen.git /tmp/deps/doxygen && cd /tmp/deps/doxygen && cmake -DCMAKE_BUILD_TYPE=Release . && make -j4 && sudo make install VERBOSE=1; fi
+#    - if [[ ${WITH_DOXYGEN} -eq 1 ]]; then git clone https://github.com/mosra/m.css.git /tmp/deps/mcss && sudo ln -s /tmp/deps/mcss/doxygen/dox2html5.py /usr/local/bin; fi
+#    - go get github.com/cheggaaa/deepcopy
+#    - go get gopkg.in/yaml.v2
+#    - go get github.com/golang/snappy
+#    - go get github.com/stretchr/testify/assert     
+  script:
+    - cd ${BUILD_DIR} && cmake ${COMMON_CMAKE_ARGS} ${REINDEXER_OPTS} ${TRAVIS_BUILD_DIR} && make reindexer_embedded_server -j4 && ldd cpp_src/server/cbinding/libreindexer_embedded_server.so
+#    - ctest --verbose
+#    - cd ${TRAVIS_BUILD_DIR} && go test ./test -bench . -cpu 1 -benchmem -benchtime 100ms
+  after_script:
+    - find . -name CMakeFiles | xargs -n1 rm -rf
+
+# .stage_build_linux_asan_template: &stage_build_linux_asan_template
+#   <<: *stage_build_linux_template
+#   env:
+#     - WITH_DOXYGEN=0
+#     - CMAKE_OPTS="-DWITH_ASAN=On -DENABLE_LIBUNWIND=Off"
+#   script:
+#     - cd ${BUILD_DIR} && cmake ${CMAKE_OPTS} ${TRAVIS_BUILD_DIR} && make -j4
+#    - ctest --verbose
+#    - cd ${TRAVIS_BUILD_DIR} && CGO_LDFLAGS=-fsanitize=address go test ./test  -bench . -cpu 1 -benchmem -benchtime 100ms -seedcount 50000 -timeout 12m
+
+# .stage_build_linux_tsan_template: &stage_build_linux_tsan_template
+#   <<: *stage_build_linux_template
+#   env:
+#     - WITH_DOXYGEN=0
+#     - CMAKE_OPTS="-DWITH_TSAN=On -DENABLE_LIBUNWIND=Off"
+# 
+# .stage_build_linux_cov_template: &stage_build_linux_cov_template
+#   <<: *stage_build_linux_template
+#   env:
+#     - WITH_DOXYGEN=0
+#     - CMAKE_OPTS="-DWITH_GCOV=On -DENABLE_LIBUNWIND=Off"
+#   script:
+#     - cd ${BUILD_DIR} && cmake ${CMAKE_OPTS} ${TRAVIS_BUILD_DIR} && make -j4
+#  #   - ctest --verbose
+# 
+.stage_build_osx_template: &stage_build_osx_template
+  <<: *stage_build_linux_template
+  env:
+    - BUILD_TYPE=MinSizeRel
+    - ENABLE_LIBUNWIND=1
+    - ENABLE_TCMALLOC=1
+    - ENABLE_JEMALLOC=0
+    - WITH_PYTHON=0
+    - SED="gsed"
+    - LIBUNWIND_LIB=
+    - SECTION_FLAGS="-ffunction-sections -fdata-sections -flto"
+  os: osx
+  osx_image: xcode11.3
+  install:
+    - export PATH=${PATH}:/usr/local/opt/gettext/bin
+    - sudo sysctl -w kern.maxfiles=20480 && sudo sysctl -w kern.maxfilesperproc=20480 && sudo launchctl limit maxfiles 20480
+    - ulimit -S -n 20480 && ulimit -n
+
+
+jobs:
+  include:
+    - stage: build
+      <<: *stage_build_osx_template
+
+    - stage: build
+      <<: *stage_build_linux_template
+
+    # - stage: build
+    #   <<: *stage_build_linux_asan_template
+
+    # - stage: build
+    #   <<: *stage_build_linux_tsan_template
+
+    # - stage: build
+    #   <<: *stage_build_linux_cov_template
+deploy:
+  provider: releases
+  api_key: ${api_key}
+  file_glob: true
+  file: "**/libreindexer_embedded_server.*"
+  skip_cleanup: true
+  draft: true
+  overwrite: true
