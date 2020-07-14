@@ -19,6 +19,8 @@ cpp_src/doc/Doxyfile-mcss
 /.vs
 /.vscode
 /out
+/build
+/out
 /out
 __pycache__
 *.pyc

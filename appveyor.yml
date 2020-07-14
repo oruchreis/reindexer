@@ -30,9 +30,9 @@ environment:
 #      APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
 cache: 
   - c:\tools\vcpkg
-  - '%appveyor_build_folder%\build\cpp_src\rocksdb_lib-prefix'
-  - '%appveyor_build_folder%\build\cpp_src\leveldb_lib-prefix'
-  - '%appveyor_build_folder%\build\cpp_src\snappy_lib-prefix'
+#  - '%appveyor_build_folder%\build\cpp_src\rocksdb_lib-prefix'
+#  - '%appveyor_build_folder%\build\cpp_src\leveldb_lib-prefix'
+#  - '%appveyor_build_folder%\build\cpp_src\snappy_lib-prefix'
 build_script:
   - cd "C:\Tools\vcpkg"
   - git fetch --all
@@ -42,7 +42,8 @@ build_script:
 #  - vcpkg update
   - .\bootstrap-vcpkg.bat
   - vcpkg update
-  - vcpkg upgrade
+  - vcpkg upgrade --no-dry-run
+  - vcpkg remove --outdated
   - cd %appveyor_build_folder%
   - git describe --tags
   - if not exist "build" mkdir build

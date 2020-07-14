@@ -1,26 +1,15 @@
 #include "server_c.h"
 #include <stdlib.h>
-//#include <string.h>
 #include <locale>
-//#include <string>
 #include "server/dbmanager.h"
 #include "server/server.h"
 #include "debug/backtrace.h"
 
 using namespace reindexer_server;
-//using std::string;
 using reindexer::Error;
 using std::shared_ptr;
 
 static Error err_not_init(-1, "Reindexer server has not initialized");
-
-#if __GNUC__
-__attribute__((constructor)) void init_library(void)
-{	    
-    reindexer::debug::backtrace_init();
-
-}
-#endif
 
 int check_server_ready(uintptr_t psvc) {
 	auto svc = reinterpret_cast<Server*>(psvc);
