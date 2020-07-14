@@ -1,8 +1,6 @@
 ﻿{
   "environments": [
-    {
-      "THIRDPARTY_HOME": "${ENV.VCPKG_ROOT}/installed/${ENV.VCPKG_TARGET_TRIPLET}"
-    },
+    { "THIRDPARTY_HOME": "${ENV.VCPKG_ROOT}/installed/${ENV.VCPKG_TARGET_TRIPLET}" },
     { "ZSTD_INCLUDE": "${ENV.THIRDPARTY_HOME}/include" },
     { "ZSTD_LIB_RELEASE": "${ENV.THIRDPARTY_HOME}/lib/zstd.lib" },
     { "ZLIB_INCLUDE": "${ENV.THIRDPARTY_HOME}/include" },
@@ -53,7 +51,12 @@
       "buildCommandArgs": "-v",
       "ctestCommandArgs": "",
       "inheritEnvironments": [ "msvc_x64_x64" ],
-      "environments": [ { "VCPKG_TARGET_TRIPLET": "x64-windows-static", "PLATFORM": "x64" } ],
+      "environments": [
+        {
+          "VCPKG_TARGET_TRIPLET": "x64-windows-static",
+          "PLATFORM": "x64"
+        }
+      ],
       "variables": [
         {
           "name": "WITH_PYTHON",
@@ -69,6 +72,21 @@
           "name": "VCPKG_TARGET_TRIPLET",
           "value": "x64-windows-static",
           "type": "STRING"
+        },
+        {
+          "name": "ENABLE_JEMALLOC",
+          "value": "False",
+          "type": "BOOL"
+        },
+        {
+          "name": "ENABLE_LIBUNWIND",
+          "value": "False",
+          "type": "BOOL"
+        },
+        {
+          "name": "ENABLE_ROCKSDB",
+          "value": "False",
+          "type": "BOOL"
         }
       ]
     },
