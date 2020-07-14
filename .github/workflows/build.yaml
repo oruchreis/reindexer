@@ -1,0 +1,92 @@
+name: Build
+
+on:
+  push:
+    branches: [ master ]
+
+jobs:
+  ubuntu:
+    runs-on: ubuntu-16.04
+    env:
+      BUILD_DIR: ${GITHUB_WORKSPACE}/build
+      BUILD_TYPE: MinSizeRel
+      ENABLE_LIBUNWIND: 0
+      ENABLE_TCMALLOC: 1
+      ENABLE_JEMALLOC: 0   
+      WITH_PYTHON: 0
+      WITH_DOXYGEN: 0 # set to 1 when doxy doc deploy is ready
+      LIBUNWIND_LIB: /usr/lib/x86_64-linux-gnu/libunwind.a
+      SECTION_FLAGS: "-ffunction-sections -fdata-sections -rdynamic -Wl,--gc-sections"
+      SED: "sed"
+    steps:
+    - uses: actions/checkout@v2
+    - name: install
+      run: |
+        sudo apt remove --purge --auto-remove gcc-5 g++-5 gcc-6 g++-6 gcc-7 g++-7 gcc-8 g++-8 cmake && sudo rm -rf /usr/local/cmake*
+        sudo apt-get -qq update > /dev/null && sudo apt-get -qq install -y -f build-essential binutils autopoint libunwind-dev curl git flex      
+        sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 10
+        sudo update-alternatives --install /usr/bin/cc cc /usr/bin/gcc-9 10
+        sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-9 10
+        sudo update-alternatives --install /usr/bin/c++ c++ /usr/bin/g++-9 10
+        if [[ ! -d "/tmp/deps/cmake" ]]; then mkdir -p "/tmp/deps/cmake" && cd /tmp/deps/cmake && wget https://cmake.org/files/v3.17/cmake-3.17.3-Linux-x86_64.sh && sudo sh cmake-3.17.3-Linux-x86_64.sh --skip-license --prefix=/tmp/deps/cmake; fi && sudo ln -s /tmp/deps/cmake /usr/local/cmake && sudo ln -s /tmp/deps/cmake/bin/cmake /usr/local/bin/cmake && export PATH=/usr/local/cmake:/usr/local/cmake/bin:$PATH && cmake --version        
+        export CXX="g++-9" CC="gcc-9" AR="gcc-ar-9" NM="gcc-nm-9" RANLIB="gcc-ranlib-9"
+        export CMAKE_C_COMPILER="/usr/bin/gcc-9"
+        export CMAKE_CXX_COMPILER="/usr/bin/g++-9"
+        export CMAKE_AR="/usr/bin/gcc-ar-9"
+        export CMAKE_NM="/usr/bin/gcc-nm-9"
+        export CMAKE_RANLIB="/usr/bin/gcc-ranlib-9"
+        cc --version && ar --version && nm --version && ranlib --version && ld --version
+        curl https://raw.githubusercontent.com/travis-ci/gimme/master/gimme > ~/gimme && chmod +x ~/gimme && eval "$(~/gimme 1.13.1)"
+    - name: dependencies
+      run: |
+        export REINDEXER_OPTS="-DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DENABLE_LIBUNWIND=${ENABLE_LIBUNWIND} -DENABLE_JEMALLOC=${ENABLE_JEMALLOC} -DENABLE_TCMALLOC=${ENABLE_TCMALLOC} -DWITH_PYTHON=${WITH_PYTHON}"
+        export CFLAGS="-g0 -Os -fPIC -fvisibility=hidden ${SECTION_FLAGS}"
+        export CXXFLAGS="-g0 -Os -fPIC -fvisibility=hidden -fvisibility-inlines-hidden ${SECTION_FLAGS}"
+        COMMON_MAKE_ARGS=(--no-print-directory -j4 CFLAGS="${CFLAGS}" CXXFLAGS="${CFLAGS}" PREFIX=/usr/local)
+        COMMON_CMAKE_ARGS=(-DCMAKE_CXX_FLAGS="${CFLAGS}" -DCMAKE_C_FLAGS="${CFLAGS}" -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_BUILD_TYPE=MinSizeRel -DCMAKE_POSITION_INDEPENDENT_CODE=1 -DCMAKE_FIND_LIBRARY_SUFFIXES=".a" -DCMAKE_LINK_SEARCH_START_STATIC=1 -DCMAKE_LINK_SEARCH_END_STATIC=1)
+        if [[ ! -d "/tmp/deps/googletest/.git" ]]; then git clone https://github.com/google/googletest.git /tmp/deps/googletest --depth 1; fi && cd /tmp/deps/googletest && git pull && cmake -DBUILD_GMOCK=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-std=c++11" . && make -j4 && sudo make install VERBOSE=1
+        if [[ ! -d "/tmp/deps/googlebench/.git" ]]; then git clone --branch v1.4.0 https://github.com/google/benchmark.git /tmp/deps/googlebench --depth 1; fi && cd /tmp/deps/googlebench && cmake -DBENCHMARK_ENABLE_TESTING=Off -DCMAKE_BUILD_TYPE=Release . && make -j4 && sudo make install VERBOSE=1
+        if [[ ${ENABLE_TCMALLOC} -eq 1 ]]; then if [[ ! -d "/tmp/deps/gperftools/.git" ]]; then git clone --branch master https://github.com/gperftools/gperftools.git /tmp/deps/gperftools --depth 1 && cd /tmp/deps/gperftools && ./autogen.sh; fi && cd /tmp/deps/gperftools && git pull && ./configure --disable-shared --enable-static --enable-libunwind=${ENABLE_LIBUNWIND} --enable-frame-pointers CFLAGS="${CFLAGS}" CXXFLAGS="${CFLAGS}" && make "${COMMON_MAKE_ARGS[@]}" && sudo make install VERBOSE=1; fi
+        if [[ ! -d "/tmp/deps/zlib/.git" ]]; then git clone --branch master https://github.com/madler/zlib.git /tmp/deps/zlib; fi && cd /tmp/deps/zlib && ./configure --static && make libz.a "${COMMON_MAKE_ARGS[@]}" && sudo make install libz.a VERBOSE=1 && sudo rm -rf /usr/local/lib/libz.so* /usr/local/lib/libz.dylib* 
+        if [[ ! -d "/tmp/deps/bzip2/.git" ]]; then git clone --branch master https://sourceware.org/git/bzip2.git /tmp/deps/bzip2; fi && cd /tmp/deps/bzip2 && git pull && make libbz2.a  "${COMMON_MAKE_ARGS[@]}" && sudo make install libbz2.a VERBOSE=1 && sudo rm -rf /usr/local/lib/libbz2.so* /usr/local/lib/libbz2.dylib*
+        if [[ ! -d "/tmp/deps/lz4/.git" ]]; then git clone --branch release https://github.com/lz4/lz4.git /tmp/deps/lz4 --depth 1; fi && cd /tmp/deps/lz4 && git pull && make liblz4.a "${COMMON_MAKE_ARGS[@]}" && sudo make uninstall VERBOSE=1 && sudo make install liblz4.a VERBOSE=1 && sudo rm -rf /usr/local/lib/liblz4.so* /usr/local/lib/liblz4.dylib*
+        if [[ ! -d "/tmp/deps/zstd/.git" ]]; then git clone --branch master https://github.com/facebook/zstd.git /tmp/deps/zstd --depth 1 && mkdir -p /tmp/deps/zstd/build/cmake/build; fi && cd /tmp/deps/zstd/build/cmake/build && git pull && cmake -DZSTD_BUILD_TESTS=OFF -DZSTD_BUILD_PROGRAMS=OFF -DZSTD_BUILD_STATIC=ON -DZSTD_BUILD_SHARED=OFF ${COMMON_CMAKE_ARGS[*]} .. && make -j4 && sudo make install VERBOSE=1 && sudo rm -rf /usr/local/lib/libzstd.so* /usr/local/lib/libzstd.dylib*
+        if [[ ${ENABLE_LIBUNWIND} -eq 1 ]]; then if [[ ! -d "/tmp/deps/liblzma/.git" ]]; then git clone --branch master https://github.com/kobolabs/liblzma.git /tmp/deps/liblzma --depth 1 && cd /tmp/deps/liblzma && ./autogen.sh; fi && cd /tmp/deps/liblzma && git pull && ./configure --disable-shared CFLAGS="${CFLAGS}" CXXFLAGS="${CFLAGS}" && make "${COMMON_MAKE_ARGS[@]}" && sudo make install VERBOSE=1; fi
+        if [[ ! -d "/tmp/deps/crc32c/.git" ]]; then git clone --branch master https://github.com/google/crc32c.git /tmp/deps/crc32c --depth 1 && mkdir -p /tmp/deps/crc32c/build; fi && cd /tmp/deps/crc32c/build && git pull && cmake -DCRC32C_BUILD_TESTS=0 -DCRC32C_BUILD_BENCHMARKS=0 -DCRC32C_USE_GLOG=0 ${COMMON_CMAKE_ARGS[*]} .. && make -j4 && sudo make install VERBOSE=1
+        if [[ ! -d "/tmp/deps/snappy/.git" ]]; then git clone --branch 1.1.8 https://github.com/google/snappy.git /tmp/deps/snappy --depth 1 && mkdir -p /tmp/deps/snappy/build; fi && cd /tmp/deps/snappy/build && git pull && cmake -DSNAPPY_BUILD_TESTS=OFF ${COMMON_CMAKE_ARGS[*]} .. && make -j4 && sudo make install VERBOSE=1
+        if [[ ${ENABLE_LIBUNWIND} -eq 1 && ! -z "${LIBUNWIND_LIB}" ]]; then JEMALLOC_ARGS="--enable-prof-libunwind --with-static-libunwind=${LIBUNWIND_LIB}" ; fi
+        if [[ ${ENABLE_JEMALLOC} -eq 1 ]]; then if [[ ! -d "/tmp/deps/jemalloc/.git" ]]; then git clone --branch master https://github.com/jemalloc/jemalloc.git /tmp/deps/jemalloc && cd /tmp/deps/jemalloc && ./autogen.sh; fi && cd /tmp/deps/jemalloc && git pull && ./configure $JEMALLOC_ARGS EXTRA_CFLAGS="${CFLAGS}" EXTRA_CXXFLAGS="${CXXFLAGS}" --disable-initial-exec-tls --without-export --disable-libdl --disable-shared --enable-xmalloc --with-malloc-conf="background_thread:true,metadata_thp:auto,percpu_arena:percpu" && make build_lib_static -j4 --no-print-directory && sudo make install VERBOSE=1 && sudo rm -rf /usr/local/lib/libjemalloc.so* /usr/local/lib/libjemalloc.a && sudo mv /usr/local/lib/libjemalloc_pic.a /usr/local/lib/libjemalloc.a; fi
+        if [[ ! -d "/tmp/deps/leveldb/.git" ]]; then git clone --branch master https://github.com/restream/leveldb.git /tmp/deps/leveldb --depth 1 && mkdir -p /tmp/deps/leveldb/build; fi && cd /tmp/deps/leveldb && git pull
+        git checkout @ -- CMakeLists.txt &&
+          ${SED} -i 's|check_library_exists[(]snappy .*|include_directories(/usr/local/include)\nfind_library(HAVE_SNAPPY NAMES libsnappy.a snappy libsnappy)|' CMakeLists.txt &&
+          ${SED} -i 's/check_library_exists[(]crc32c .*/find_library(HAVE_CRC32C NAMES libcrc32c.a crc32c libcrc32c)/' CMakeLists.txt &&
+          if [[ ${ENABLE_TCMALLOC} -eq 1 ]]; then
+              ${SED} -i 's/check_library_exists[(]tcmalloc .*/find_library(HAVE_TCMALLOC NAMES libtcmalloc.a tcmalloc libtcmalloc)/' CMakeLists.txt;
+          else
+              ${SED} -i 's/check_library_exists[(]tcmalloc .*/#find_library(HAVE_TCMALLOC NAMES libtcmalloc.a tcmalloc libtcmalloc)/' CMakeLists.txt;
+          fi &&
+          ${SED} -i 's/target_link_libraries(leveldb crc32c)/message(STATUS "Found ${HAVE_CRC32C}")\ntarget_link_libraries(leveldb ${HAVE_CRC32C})/g' CMakeLists.txt &&
+          ${SED} -i 's/target_link_libraries(leveldb snappy)/message(STATUS "Found ${HAVE_SNAPPY}")\ntarget_link_libraries(leveldb ${HAVE_SNAPPY})/g' CMakeLists.txt &&
+          if [[ ${ENABLE_LIBUNWIND} -eq 1 ]]; then
+              ${SED} -i 's|target_link_libraries(leveldb tcmalloc)|message(STATUS "Found ${HAVE_TCMALLOC}")\ntarget_link_libraries(leveldb ${HAVE_TCMALLOC} '$LIBUNWIND_LIB' /usr/local/lib/liblzma.a)|g' CMakeLists.txt;
+          else
+              ${SED} -i 's|target_link_libraries(leveldb tcmalloc)|message(STATUS "Found ${HAVE_TCMALLOC}")\ntarget_link_libraries(leveldb ${HAVE_TCMALLOC})|g' CMakeLists.txt;
+          fi
+        cd build && cmake -DLEVELDB_BUILD_TESTS=OFF -DLEVELDB_BUILD_BENCHMARKS=OFF -DBUILD_SHARED_LIBS=OFF ${COMMON_CMAKE_ARGS[*]} .. && make leveldb -j4 && sudo make install VERBOSE=1
+        if [[ ! -d "/tmp/deps/rocksdb/.git" ]]; then git clone --branch v6.11.4 https://github.com/facebook/rocksdb.git /tmp/deps/rocksdb --depth 1 && mkdir -p /tmp/deps/rocksdb/build; fi && cd /tmp/deps/rocksdb/build && git pull && cmake -DPORTABLE=1 -DWITH_MD_LIBRARY=0 -DROCKSDB_BUILD_SHARED=0 -DWITH_GFLAGS=0 -DWITH_JEMALLOC=${ENABLE_JEMALLOC} -DWITH_SNAPPY=1 -DWITH_LZ4=1 -DWITH_ZSTD=1 -DWITH_ZLIB=1 -DWITH_BZ2=1 -DWITH_BENCHMARK_TOOLS=0 -DWITH_TOOLS=0 -DWITH_CORE_TOOLS=0 -DWITH_TESTS=0 -DUSE_RTTI=1 -DWITH_RUNTIME_DEBUG=0 -DWITH_JNI=0 ${COMMON_CMAKE_ARGS[*]} .. && make -j4 && sudo make install VERBOSE=1
+        if [[ "$RUNNER_OS" == "Linux" && ! -d "/opt/diet/lib-x86_64" ]]; then
+          sudo mkdir -p /opt/diet/lib-x86_64 &&
+          sudo cp ${GITHUB_WORKSPACE}/externals/dietlibc/libcompat.a /opt/diet/lib-x86_64/;
+          fi
+        for lib in z bz2 lz4 zstd lzma crc32c snappy unwind jemalloc leveldb rocksdb ;do sudo du -h "/usr/local/lib/lib$lib.a" "/usr/lib/x86_64-linux-gnu/lib$lib.a" 2> /dev/null || true; done
+    - name: build
+      run: |
+        cd ${BUILD_DIR} && cmake ${REINDEXER_OPTS} ${GITHUB_WORKSPACE} && make reindexer_embedded_server -j4
+        find ${BUILD_DIR}/cpp_src/server/cbinding \( -name "*.so" -or -name "*.dylib" \) | xargs du -h
+        find ${BUILD_DIR}/cpp_src/server/cbinding \( -name "*.so" -or -name "*.dylib" \) | xargs ldd | true
+    - name: artifacts
+      uses: actions/upload-artifact@v2
+      with:
+        name: lib
+        path: |
+            **/libreindexer_embedded_server.*
