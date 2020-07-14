@@ -1,7 +1,7 @@
 #include "je_malloc_extension.h"
 
 #if REINDEX_WITH_JEMALLOC
-#include <jemalloc/jemalloc.h>
+#include "jemalloc/jemalloc.h"
 #ifndef _WIN32
 #include <dlfcn.h>
 #include <stdlib.h>
@@ -23,6 +23,16 @@ using MallctlFn = int (*)(const char* name, void* oldp, size_t* oldlenp, void* n
 
 static MallctlFn getMallctlFn() {
 	static auto getInstanceFn = reinterpret_cast<MallctlFn>(dlsym(RTLD_DEFAULT, "mallctl"));
+	if (getInstanceFn == nullptr)
+	{
+		getInstanceFn = reinterpret_cast<MallctlFn>(dlsym(RTLD_DEFAULT, "je_mallctl"));
+	}
+	
+	if (getInstanceFn == nullptr)
+	{
+	 	getInstanceFn = &::mallctl;
+	}
+	
 	return getInstanceFn;
 }
 

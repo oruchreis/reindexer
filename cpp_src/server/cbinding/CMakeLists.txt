@@ -11,18 +11,39 @@ project(reindexer)
 
 set(TARGET reindexer_embedded_server)
 
-add_library(${TARGET} SHARED "server_c.cc" "../../core/cbinding/reindexer_c.cc")
+add_library(${TARGET} SHARED "library_init.cc" "server_c.cc" "../../core/cbinding/reindexer_c.cc")
 #There is a ice bug in gcc when enabled lto, so disabled: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=91288
-#set_property(TARGET ${TARGET} PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+set_property(TARGET ${TARGET} PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
 set_property(TARGET ${TARGET} PROPERTY POSITION_INDEPENDENT_CODE ON)
 list(APPEND REINDEXER_LIBRARIES reindexer_server_library)
 include_directories(${PROJECT_SOURCE_DIR})
 add_dependencies(${TARGET} reindexer_server_library)
 
-#if (NOT MSVC)
-#    set_target_properties(${TARGET} PROPERTIES LINK_SEARCH_START_STATIC 1)
-#    set_target_properties(${TARGET} PROPERTIES LINK_SEARCH_END_STATIC 1)
-#endif()
+if (NOT MSVC && (ENABLE_TCMALLOC || ENABLE_JEMALLOC)) # Extremely needed by malloc ovverrides on GCC
+    if (EXISTS /opt/diet/lib-x86_64/libcompat.a)
+        list(APPEND REINDEXER_LIBRARIES
+            /opt/diet/lib-x86_64/libcompat.a
+        )
+    endif()
+    target_link_libraries(${TARGET} PRIVATE 
+      ${REINDEXER_LIBRARIES}       
+      # -Bstatic -lstdc++ -Bdynamic
+      )
+    set_target_properties(${TARGET} PROPERTIES LINK_SEARCH_START_STATIC 1)
+    set_target_properties(${TARGET} PROPERTIES LINK_SEARCH_END_STATIC 1)
+    set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
+    target_link_options(${TARGET} PRIVATE --verbose)
+    if (NOT APPLE)
+        set(CMAKE_SHARED_LINKER_FLAGS "-static-libgcc -static-libstdc++")
+        target_link_options(${TARGET} PRIVATE 
+        -Wl,-Bsymbolic -Wl,-Bsymbolic-functions
+        -Wl,--version-script,${CMAKE_CURRENT_SOURCE_DIR}/version_script.map 
+        -Wno-error -Wno-uninitialized -Wno-maybe-uninitialized #for -flto
+        -static-libgcc
+        -static-libstdc++ 
+        --verbose)
+    endif()    
+endif()
 
 message(STATUS "'${TARGET}' Target Link Libs: ${REINDEXER_LIBRARIES}")
 target_link_libraries(${TARGET} PRIVATE ${REINDEXER_LIBRARIES})
