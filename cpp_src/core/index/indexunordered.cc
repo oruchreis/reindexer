@@ -15,6 +15,9 @@
 namespace reindexer {
 
 constexpr int kMaxIdsForDistinct = 500;
+constexpr int kMaxSelectivityPercentForIdset = 20;
+constexpr int kSelectScanThreshold = 10000; //choose scan method if item count lt than this.
+constexpr int kMaxIdsForSetScan = 5000; //choose scan method if idset lt than this.
 
 template <typename T>
 IndexUnordered<T>::IndexUnordered(const IndexDef &idef, const PayloadType payloadType, const FieldsSet &fields)
@@ -181,7 +184,7 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 					Index::SelectOpts opts;
 				} ctx = {&this->idx_map, keys, sortId, opts};
 				// should return true, if fallback to comparator required
-				auto selector = [&ctx](SelectKeyResult &res) -> bool {
+				auto selector = [&ctx](SelectKeyResult &res) -> bool {					
 					size_t idsCount = 0;
 					res.reserve(ctx.keys.size());
 					for (auto key : ctx.keys) {
@@ -190,10 +193,12 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 							res.emplace_back(keyIt->second, ctx.sortId);
 							idsCount += keyIt->second.Unsorted().size();
 						}
-					}
+					}					
 					if (!ctx.opts.itemsCountInNamespace) return false;
 					// Check selectivity
-					return res.size() > 1u && (100u * idsCount / ctx.opts.itemsCountInNamespace > maxSelectivityPercentForIdset());
+					return res.size() > 1 && 
+						ctx.opts.itemsCountInNamespace < kSelectScanThreshold && ctx.keys.size() < kMaxIdsForSetScan &&
+						(100 * idsCount / ctx.opts.itemsCountInNamespace > kMaxSelectivityPercentForIdset);
 				};
 
 				bool scanWin = false;
