@@ -1,6 +1,9 @@
 name: build
 
-on: push
+on: 
+  push:
+    branches-ignore:
+      - '**'
 jobs:
   build-windows-latest:
     runs-on: windows-latest
