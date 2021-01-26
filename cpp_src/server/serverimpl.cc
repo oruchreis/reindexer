@@ -340,28 +340,28 @@ int ServerImpl::run() {
 		}
 #if defined(WITH_GRPC)
 		void *hGRPCService = nullptr;
-#if REINDEX_WITH_LIBDL
-#ifdef __APPLE__
-		auto hGRPCServiceLib = dlopen("libreindexer_grpc_library.dylib", RTLD_NOW);
-#else
-		auto hGRPCServiceLib = dlopen("libreindexer_grpc_library.so", RTLD_NOW);
-#endif
-		if (hGRPCServiceLib && config_.EnableGRPC) {
-			auto start_grpc = reinterpret_cast<p_start_reindexer_grpc>(dlsym(hGRPCServiceLib, "start_reindexer_grpc"));
-
-			hGRPCService = start_grpc(*dbMgr_, config_.TxIdleTimeout, loop_, config_.GRPCAddr);
-			logger_.info("Listening gRPC service on {0}", config_.GRPCAddr);
-		} else if (config_.EnableGRPC) {
-			logger_.error("Can't load libreindexer_grpc_library. gRPC will not work: {}", dlerror());
-			return EXIT_FAILURE;
-		}
-#else
+//#if REINDEX_WITH_LIBDL
+//#ifdef __APPLE__
+//		auto hGRPCServiceLib = dlopen("libreindexer_grpc_library.dylib", RTLD_NOW);
+//#else
+//		auto hGRPCServiceLib = dlopen("libreindexer_grpc_library.so", RTLD_NOW);
+//#endif
+//		if (hGRPCServiceLib && config_.EnableGRPC) {
+//			auto start_grpc = reinterpret_cast<p_start_reindexer_grpc>(dlsym(hGRPCServiceLib, "start_reindexer_grpc"));
+//
+//			hGRPCService = start_grpc(*dbMgr_, config_.TxIdleTimeout, loop_, config_.GRPCAddr);
+//			logger_.info("Listening gRPC service on {0}", config_.GRPCAddr);
+//		} else if (config_.EnableGRPC) {
+//			logger_.error("Can't load libreindexer_grpc_library. gRPC will not work: {}", dlerror());
+//			return EXIT_FAILURE;
+//		}
+//#else
 		if (config_.EnableGRPC) {
 			hGRPCService = start_reindexer_grpc(*dbMgr_, config_.TxIdleTimeout, loop_, config_.GRPCAddr);
 			logger_.info("Listening gRPC service on {0}", config_.GRPCAddr);
 		}
 
-#endif
+//#endif
 #endif
 		auto sigCallback = [&](ev::sig &sig) {
 			logger_.info("Signal received. Terminating...");
@@ -416,19 +416,19 @@ int ServerImpl::run() {
 		httpServer.Stop();
 		logger_.info("HTTP Server shutdown completed.");
 #if defined(WITH_GRPC)
-#if REINDEX_WITH_LIBDL
-		if (hGRPCServiceLib && config_.EnableGRPC) {
-			auto stop_grpc = reinterpret_cast<p_stop_reindexer_grpc>(dlsym(hGRPCServiceLib, "stop_reindexer_grpc"));
-			stop_grpc(hGRPCService);
-			logger_.info("gRPC Server shutdown completed.");
-		}
-#else
+//#if REINDEX_WITH_LIBDL
+//		if (hGRPCServiceLib && config_.EnableGRPC) {
+//			auto stop_grpc = reinterpret_cast<p_stop_reindexer_grpc>(dlsym(hGRPCServiceLib, "stop_reindexer_grpc"));
+//			stop_grpc(hGRPCService);
+//			logger_.info("gRPC Server shutdown completed.");
+//		}
+//#else
 		if (config_.EnableGRPC) {
 			stop_reindexer_grpc(hGRPCService);
 			logger_.info("gRPC Server shutdown completed.");
 		}
 
-#endif
+//#endif
 #endif
 	} catch (const Error &err) {
 		logger_.error("Unhandled exception occurred: {0}", err.what());

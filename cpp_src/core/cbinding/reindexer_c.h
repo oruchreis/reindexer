@@ -72,7 +72,7 @@ EXPORT reindexer_ret reindexer_get_meta(uintptr_t rx, reindexer_string ns, reind
 
 EXPORT reindexer_error reindexer_cancel_context(reindexer_ctx_info ctx_info, ctx_cancel_type how);
 
-EXPORT void reindexer_enable_logger(void (*logWriter)(int level, char *msg));
+EXPORT void reindexer_enable_logger(void (*logWriter)(int, char *));
 EXPORT void reindexer_disable_logger();
 
 EXPORT void reindexer_init_locale();
