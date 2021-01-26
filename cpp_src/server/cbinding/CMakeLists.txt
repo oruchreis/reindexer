@@ -11,6 +11,10 @@ project(reindexer)
 
 set(TARGET reindexer_embedded_server)
 
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /SAFESEH:NO")
+set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /SAFESEH:NO")
+set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} /SAFESEH:NO")
+
 add_library(${TARGET} SHARED "library_init.cc" "server_c.cc" "../../core/cbinding/reindexer_c.cc")
 #There is a ice bug in gcc when enabled lto, so disabled: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=91288
 set_property(TARGET ${TARGET} PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
@@ -19,7 +23,7 @@ list(APPEND REINDEXER_LIBRARIES reindexer_server_library)
 include_directories(${PROJECT_SOURCE_DIR})
 add_dependencies(${TARGET} reindexer_server_library)
 
-if (NOT MSVC && (ENABLE_TCMALLOC || ENABLE_JEMALLOC)) # Extremely needed by malloc ovverrides on GCC
+if (NOT MSVC AND (ENABLE_TCMALLOC OR ENABLE_JEMALLOC)) # Extremely needed by malloc ovverrides on GCC
     if (EXISTS /opt/diet/lib-x86_64/libcompat.a)
         list(APPEND REINDEXER_LIBRARIES
             /opt/diet/lib-x86_64/libcompat.a

@@ -114,8 +114,52 @@
       "cmakeCommandArgs": "",
       "buildCommandArgs": "-v",
       "ctestCommandArgs": "",
-      "inheritEnvironments": [ "msvc_x86" ],
+      "inheritEnvironments": [ "msvc_x86_x64" ],
       "variables": []
+    },
+    {
+      "name": "x86-Release",
+      "generator": "Ninja",
+      "configurationType": "RelWithDebInfo",
+      "buildRoot": "${projectDir}\\out\\build\\${name}",
+      "installRoot": "${projectDir}\\out\\install\\${name}",
+      "cmakeCommandArgs": "-DLINK_TYPE=Static",
+      "buildCommandArgs": "-v",
+      "ctestCommandArgs": "",
+      "inheritEnvironments": [ "msvc_x86_x64" ],
+      "environments": [ {} ],
+      "variables": [
+        {
+          "name": "WITH_PYTHON",
+          "value": "False",
+          "type": "BOOL"
+        },
+        {
+          "name": "LINK_RESOURCES",
+          "value": "True",
+          "type": "BOOL"
+        },
+        {
+          "name": "VCPKG_TARGET_TRIPLET",
+          "value": "x64-windows-static",
+          "type": "STRING"
+        },
+        {
+          "name": "ENABLE_JEMALLOC",
+          "value": "False",
+          "type": "BOOL"
+        },
+        {
+          "name": "ENABLE_LIBUNWIND",
+          "value": "False",
+          "type": "BOOL"
+        },
+        {
+          "name": "ENABLE_ROCKSDB",
+          "value": "False",
+          "type": "BOOL"
+        }
+      ]
     }
   ]
 }
