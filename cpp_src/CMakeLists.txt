@@ -110,8 +110,8 @@ else()
     set(ENV{SECTION_FLAGS} "-ffunction-sections -fdata-sections -rdynamic -Wl,--gc-sections")
   endif()
   message(STATUS "Section Flags: $ENV{SECTION_FLAGS}")
-  set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Werror -Wswitch-enum -fno-omit-frame-pointer $ENV{SECTION_FLAGS}")
-  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -Wall -Wextra -Werror -Wswitch-enum -Wold-style-cast -fexceptions -fno-omit-frame-pointer $ENV{SECTION_FLAGS}")
+  set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-omit-frame-pointer $ENV{SECTION_FLAGS}")
+  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -fexceptions -fno-omit-frame-pointer $ENV{SECTION_FLAGS}")
   if (${COMPILER_TARGET_ARCH} STREQUAL "e2k")
     set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -gline -fverbose-asm")
     set (CMAKE_CXX_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-parameter")
@@ -461,7 +461,7 @@ if(ENABLE_ROCKSDB)
         ExternalProject_Add(
             rocksdb_lib
             GIT_REPOSITORY "https://github.com/facebook/rocksdb.git"
-            GIT_TAG "v6.8.1"
+            GIT_TAG "v6.27.3"
             INSTALL_COMMAND cmake -E echo "Skipping install step."
             CMAKE_ARGS "${CMAKE_ARGS}"        
         )
@@ -707,9 +707,9 @@ if(EXISTS ${PROJECT_SOURCE_DIR}/.git OR EXISTS ${PROJECT_SOURCE_DIR}/../.git )
   execute_process(WORKING_DIRECTORY ${REINDEXER_SOURCE_PATH} COMMAND git describe --tags OUTPUT_VARIABLE REINDEXER_VERSION_FULL OUTPUT_STRIP_TRAILING_WHITESPACE)
 endif()
 
-if(NOT REINDEXER_VERSION_FULL)
-set(REINDEXER_VERSION_FULL ${REINDEXER_VERSION_DEFAULT})
-endif()
+if (NOT REINDEXER_VERSION_FULL)
+  set (REINDEXER_VERSION_FULL ${REINDEXER_VERSION_DEFAULT})
+endif ()
 
 message(STATUS "Building Reindexer ${REINDEXER_VERSION_FULL}")
 set (REINDEXER_VERSION_H "#pragma once\n#define REINDEX_VERSION \"${REINDEXER_VERSION_FULL}\"\n")

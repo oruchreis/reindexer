@@ -19,7 +19,7 @@
 #endif
 
 __attribute__((constructor)) void init_library(void) {
-	reindexer::debug::backtrace_init();
+	//reindexer::debug::backtrace_init();
 	printf("Reindexer: %s [%s %s]\n", REINDEX_VERSION, __DATE__, __TIME__);
 
 #if REINDEX_WITH_JEMALLOC
