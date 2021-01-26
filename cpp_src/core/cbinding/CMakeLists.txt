@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.0)
 
 project(reindexer_binding)
 
@@ -8,6 +8,11 @@ add_library(${TARGET} SHARED "reindexer_c.cc")
 list(APPEND REINDEXER_LIBRARIES reindexer ${REINDEXER_LIBRARIES})
 include_directories(${PROJECT_SOURCE_DIR})
 add_dependencies(${TARGET} reindexer_binding_library)
+if (ENABLE_GRPC)
+    add_dependencies(${TARGET} reindexer_grpc_library)
+    list(APPEND REINDEXER_LIBRARIES reindexer_grpc_library)
+    add_definitions(-DWITH_GRPC)
+endif()
 
 target_link_libraries(${TARGET} PRIVATE ${REINDEXER_LIBRARIES})
 

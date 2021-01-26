@@ -1,8 +1,9 @@
 if(MSVC)
     cmake_minimum_required(VERSION 3.15)
     cmake_policy(SET CMP0091 NEW)
+    cmake_policy(SET CMP0003 NEW)
 else()
-    cmake_minimum_required(VERSION 2.8)
+    cmake_minimum_required(VERSION 3.0)
 endif()
 cmake_policy(SET CMP0069 NEW) 
 set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
@@ -13,13 +14,21 @@ set(TARGET reindexer_embedded_server)
 
 add_library(${TARGET} SHARED "library_init.cc" "server_c.cc" "../../core/cbinding/reindexer_c.cc")
 #There is a ice bug in gcc when enabled lto, so disabled: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=91288
-set_property(TARGET ${TARGET} PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+if(NOT APPLE)
+    set_property(TARGET ${TARGET} PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+endif()
+
 set_property(TARGET ${TARGET} PROPERTY POSITION_INDEPENDENT_CODE ON)
 list(APPEND REINDEXER_LIBRARIES reindexer_server_library)
 include_directories(${PROJECT_SOURCE_DIR})
 add_dependencies(${TARGET} reindexer_server_library)
+if (ENABLE_GRPC)
+    add_dependencies(${TARGET} reindexer_grpc_library)
+    list(APPEND REINDEXER_LIBRARIES reindexer_grpc_library)
+    add_definitions(-DWITH_GRPC)
+endif()
 
-if (NOT MSVC && (ENABLE_TCMALLOC || ENABLE_JEMALLOC)) # Extremely needed by malloc ovverrides on GCC
+if (NOT MSVC AND (ENABLE_TCMALLOC OR ENABLE_JEMALLOC)) # Extremely needed by malloc ovverrides on GCC
     if (EXISTS /opt/diet/lib-x86_64/libcompat.a)
         list(APPEND REINDEXER_LIBRARIES
             /opt/diet/lib-x86_64/libcompat.a
@@ -50,6 +59,9 @@ target_link_libraries(${TARGET} PRIVATE ${REINDEXER_LIBRARIES})
 
 if (WIN32)
   if (MSVC)
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /SAFESEH:NO")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /SAFESEH:NO")
+    set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} /SAFESEH:NO")
     set_property(TARGET ${TARGET} PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     target_compile_options(${TARGET} PRIVATE "/MT$<$<CONFIG:Debug>:Debug>" /GL)
     target_link_options(${TARGET} PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/FORCE:MULTIPLE> /OPT:REF /OPT:ICF /LTCG)
