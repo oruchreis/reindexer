@@ -78,7 +78,7 @@ jobs:
     env:
       BUILD_TYPE: MinSizeRel
       ENABLE_LIBUNWIND: 0
-      ENABLE_TCMALLOC: 1
+      ENABLE_TCMALLOC: 0
       ENABLE_JEMALLOC: 0   
       WITH_PYTHON: 0
       WITH_DOXYGEN: 0 # set to 1 when doxy doc deploy is ready
@@ -95,7 +95,7 @@ jobs:
         path: |
           /opt/diet
           /tmp/deps
-        key: ${{ runner.os }}-${{ hashFiles('**/*.a', '**/*.so', '**/*.dylib') }}
+        key: ${{ runner.os }}-v2
     - name: install
       run: |
         sudo apt remove --purge --auto-remove gcc-5 g++-5 gcc-6 g++-6 gcc-7 g++-7 gcc-8 g++-8 cmake && sudo rm -rf /usr/local/cmake*
@@ -123,7 +123,7 @@ jobs:
         COMMON_CMAKE_ARGS=(-DCMAKE_CXX_FLAGS="${CFLAGS}" -DCMAKE_C_FLAGS="${CFLAGS}" -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_BUILD_TYPE=MinSizeRel -DCMAKE_POSITION_INDEPENDENT_CODE=1 -DCMAKE_FIND_LIBRARY_SUFFIXES=".a" -DCMAKE_LINK_SEARCH_START_STATIC=1 -DCMAKE_LINK_SEARCH_END_STATIC=1)        
         if [[ ! -d "/tmp/deps/googletest/.git" ]]; then git clone https://github.com/google/googletest.git /tmp/deps/googletest --depth 1; fi && cd /tmp/deps/googletest && git pull && cmake -DBUILD_GMOCK=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-std=c++11" . && make -j4 && sudo make install VERBOSE=1
         if [[ ! -d "/tmp/deps/googlebench/.git" ]]; then git clone --branch v1.4.0 https://github.com/google/benchmark.git /tmp/deps/googlebench --depth 1; fi && cd /tmp/deps/googlebench && cmake -DBENCHMARK_ENABLE_TESTING=Off -DCMAKE_BUILD_TYPE=Release . && make -j4 && sudo make install VERBOSE=1
-        if [[ ${ENABLE_TCMALLOC} -eq 1 ]]; then if [[ ! -d "/tmp/deps/gperftools/.git" ]]; then git clone --branch master https://github.com/gperftools/gperftools.git /tmp/deps/gperftools --depth 1 && cd /tmp/deps/gperftools && ./autogen.sh; fi && cd /tmp/deps/gperftools && git pull && ./configure --disable-shared --enable-static --enable-libunwind=${ENABLE_LIBUNWIND} --enable-frame-pointers CFLAGS="${CFLAGS}" CXXFLAGS="${CFLAGS}" && make "${COMMON_MAKE_ARGS[@]}" && sudo make install VERBOSE=1; fi
+        if [[ ${ENABLE_TCMALLOC} -eq 1 ]]; then if [[ ! -d "/tmp/deps/gperftools/.git" ]]; then git clone --branch master https://github.com/gperftools/gperftools.git /tmp/deps/gperftools --depth 1 && cd /tmp/deps/gperftools && ./autogen.sh; fi && cd /tmp/deps/gperftools && git pull && ./configure --disable-shared --enable-static --enable-libunwind=${ENABLE_LIBUNWIND} --enable-frame-pointers CFLAGS="${CFLAGS}" CXXFLAGS="${CFLAGS}" && make "${COMMON_MAKE_ARGS[@]}" && sudo make install VERBOSE=1; else sudo rm -rf  /usr/local/lib/*tcmalloc.*; fi
         if [[ ! -d "/tmp/deps/zlib/.git" ]]; then git clone --branch master https://github.com/madler/zlib.git /tmp/deps/zlib; fi && cd /tmp/deps/zlib && ./configure --static && make libz.a "${COMMON_MAKE_ARGS[@]}" && sudo make install libz.a VERBOSE=1 && sudo rm -rf /usr/local/lib/libz.so* /usr/local/lib/libz.dylib* 
         if [[ ! -d "/tmp/deps/bzip2/.git" ]]; then git clone --branch master https://sourceware.org/git/bzip2.git /tmp/deps/bzip2; fi && cd /tmp/deps/bzip2 && git pull && make libbz2.a  "${COMMON_MAKE_ARGS[@]}" && sudo make install libbz2.a VERBOSE=1 && sudo rm -rf /usr/local/lib/libbz2.so* /usr/local/lib/libbz2.dylib*
         if [[ ! -d "/tmp/deps/lz4/.git" ]]; then git clone --branch release https://github.com/lz4/lz4.git /tmp/deps/lz4 --depth 1; fi && cd /tmp/deps/lz4 && git pull && make liblz4.a "${COMMON_MAKE_ARGS[@]}" && sudo make uninstall VERBOSE=1 && sudo make install liblz4.a VERBOSE=1 && sudo rm -rf /usr/local/lib/liblz4.so* /usr/local/lib/liblz4.dylib*
@@ -149,8 +149,9 @@ jobs:
           else
               ${SED} -i 's|target_link_libraries(leveldb tcmalloc)|message(STATUS "Found ${HAVE_TCMALLOC}")\ntarget_link_libraries(leveldb ${HAVE_TCMALLOC})|g' CMakeLists.txt;
           fi
+        cat CMakeLists.txt
         cd build && cmake -DLEVELDB_BUILD_TESTS=OFF -DLEVELDB_BUILD_BENCHMARKS=OFF -DBUILD_SHARED_LIBS=OFF ${COMMON_CMAKE_ARGS[*]} .. && make leveldb -j4 && sudo make install VERBOSE=1
-        if [[ ! -d "/tmp/deps/rocksdb/.git" ]]; then git clone --branch v6.11.4 https://github.com/facebook/rocksdb.git /tmp/deps/rocksdb --depth 1 && mkdir -p /tmp/deps/rocksdb/build; fi && cd /tmp/deps/rocksdb/build && git pull && cmake -DPORTABLE=1 -DWITH_MD_LIBRARY=0 -DROCKSDB_BUILD_SHARED=0 -DWITH_GFLAGS=0 -DWITH_JEMALLOC=${ENABLE_JEMALLOC} -DWITH_SNAPPY=1 -DWITH_LZ4=1 -DWITH_ZSTD=1 -DWITH_ZLIB=1 -DWITH_BZ2=1 -DWITH_BENCHMARK_TOOLS=0 -DWITH_TOOLS=0 -DWITH_CORE_TOOLS=0 -DWITH_TESTS=0 -DUSE_RTTI=1 -DWITH_RUNTIME_DEBUG=0 -DWITH_JNI=0 ${COMMON_CMAKE_ARGS[*]} .. && make -j4 && sudo make install VERBOSE=1
+        if [[ ! -d "/tmp/deps/rocksdb/.git" ]]; then git clone --branch v6.15.4 https://github.com/facebook/rocksdb.git /tmp/deps/rocksdb --depth 1 && mkdir -p /tmp/deps/rocksdb/build; fi && cd /tmp/deps/rocksdb/build && git pull && cmake -DPORTABLE=1 -DWITH_MD_LIBRARY=0 -DROCKSDB_BUILD_SHARED=0 -DWITH_GFLAGS=0 -DWITH_JEMALLOC=${ENABLE_JEMALLOC} -DWITH_SNAPPY=1 -DWITH_LZ4=1 -DWITH_ZSTD=1 -DWITH_ZLIB=1 -DWITH_BZ2=1 -DWITH_BENCHMARK_TOOLS=0 -DWITH_TOOLS=0 -DWITH_CORE_TOOLS=0 -DWITH_TESTS=0 -DUSE_RTTI=1 -DWITH_RUNTIME_DEBUG=0 -DWITH_JNI=0 ${COMMON_CMAKE_ARGS[*]} .. && make -j4 && sudo make install VERBOSE=1
         if [[ "$RUNNER_OS" == "Linux" && ! -d "/opt/diet/lib-x86_64" ]]; then
           sudo mkdir -p /opt/diet/lib-x86_64 &&
           sudo cp ${GITHUB_WORKSPACE}/externals/dietlibc/libcompat.a /opt/diet/lib-x86_64/;
@@ -171,7 +172,7 @@ jobs:
             **/libreindexer_embedded_server.*
   
   macos:
-    runs-on: macos-11.0
+    runs-on: macos-latest
     env:
       BUILD_TYPE: MinSizeRel
       ENABLE_LIBUNWIND: 0
@@ -191,10 +192,10 @@ jobs:
         path: |
           $HOME/Library/Caches/Homebrew
           /usr/local/Homebrew
-        key: ${{ runner.os }}-${{ hashFiles('**/*.a', '**/*.so', '**/*.dylib') }}
+        key: ${{ runner.os }}-v1
     - name: install
       run: |
-        brew install cmake gnu-sed flex gettext autoconf automake libtool cvs
+        brew update > /dev/null && brew install cmake gnu-sed flex gettext autoconf automake libtool cvs
         export PATH=${PATH}:/usr/local/opt/gettext/bin
         sudo sysctl -w kern.maxfiles=20480 && sudo sysctl -w kern.maxfilesperproc=20480 && sudo launchctl limit maxfiles 20480
         ulimit -S -n 20480 && ulimit -n
@@ -235,7 +236,7 @@ jobs:
               ${SED} -i 's|target_link_libraries(leveldb tcmalloc)|message(STATUS "Found ${HAVE_TCMALLOC}")\ntarget_link_libraries(leveldb ${HAVE_TCMALLOC})|g' CMakeLists.txt;
           fi
         cd build && cmake -DLEVELDB_BUILD_TESTS=OFF -DLEVELDB_BUILD_BENCHMARKS=OFF -DBUILD_SHARED_LIBS=OFF ${COMMON_CMAKE_ARGS[*]} .. && make leveldb -j4 && sudo make install VERBOSE=1
-        if [[ ! -d "/tmp/deps/rocksdb/.git" ]]; then git clone --branch v6.11.4 https://github.com/facebook/rocksdb.git /tmp/deps/rocksdb --depth 1 && mkdir -p /tmp/deps/rocksdb/build; fi && cd /tmp/deps/rocksdb/build && git pull && cmake -DPORTABLE=1 -DWITH_MD_LIBRARY=0 -DROCKSDB_BUILD_SHARED=0 -DWITH_GFLAGS=0 -DWITH_JEMALLOC=${ENABLE_JEMALLOC} -DWITH_SNAPPY=1 -DWITH_LZ4=1 -DWITH_ZSTD=1 -DWITH_ZLIB=1 -DWITH_BZ2=1 -DWITH_BENCHMARK_TOOLS=0 -DWITH_TOOLS=0 -DWITH_CORE_TOOLS=0 -DWITH_TESTS=0 -DUSE_RTTI=1 -DWITH_RUNTIME_DEBUG=0 -DWITH_JNI=0 ${COMMON_CMAKE_ARGS[*]} .. && make -j4 && sudo make install VERBOSE=1
+        if [[ ! -d "/tmp/deps/rocksdb/.git" ]]; then git clone --branch v6.15.4 https://github.com/facebook/rocksdb.git /tmp/deps/rocksdb --depth 1 && mkdir -p /tmp/deps/rocksdb/build; fi && cd /tmp/deps/rocksdb/build && git pull && cmake -DPORTABLE=1 -DWITH_MD_LIBRARY=0 -DROCKSDB_BUILD_SHARED=0 -DWITH_GFLAGS=0 -DWITH_JEMALLOC=${ENABLE_JEMALLOC} -DWITH_SNAPPY=1 -DWITH_LZ4=1 -DWITH_ZSTD=1 -DWITH_ZLIB=1 -DWITH_BZ2=1 -DWITH_BENCHMARK_TOOLS=0 -DWITH_TOOLS=0 -DWITH_CORE_TOOLS=0 -DWITH_TESTS=0 -DUSE_RTTI=1 -DWITH_RUNTIME_DEBUG=0 -DWITH_JNI=0 ${COMMON_CMAKE_ARGS[*]} .. && make -j4 && sudo make install VERBOSE=1
         if [[ "$RUNNER_OS" == "Linux" && ! -d "/opt/diet/lib-x86_64" ]]; then
           sudo mkdir -p /opt/diet/lib-x86_64 &&
           sudo cp ${GITHUB_WORKSPACE}/externals/dietlibc/libcompat.a /opt/diet/lib-x86_64/;
