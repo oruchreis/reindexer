@@ -98,19 +98,20 @@ jobs:
         key: ${{ runner.os }}-v2
     - name: install
       run: |
-        sudo apt remove --purge --auto-remove gcc-5 g++-5 gcc-6 g++-6 gcc-7 g++-7 gcc-8 g++-8 cmake && sudo rm -rf /usr/local/cmake*
+        #sudo apt remove --purge --auto-remove gcc-5 g++-5 gcc-6 g++-6 gcc-7 g++-7 gcc-8 g++-8
+        sudo apt remove --purge --auto-remove cmake && sudo rm -rf /usr/local/cmake*
         sudo apt-get -qq update > /dev/null && sudo apt-get -qq install -y -f build-essential binutils autopoint libunwind-dev curl git flex      
-        sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 10
-        sudo update-alternatives --install /usr/bin/cc cc /usr/bin/gcc-9 10
-        sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-9 10
-        sudo update-alternatives --install /usr/bin/c++ c++ /usr/bin/g++-9 10
+        #sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 10
+        #sudo update-alternatives --install /usr/bin/cc cc /usr/bin/gcc-9 10
+        #sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-9 10
+        #sudo update-alternatives --install /usr/bin/c++ c++ /usr/bin/g++-9 10
         if [[ ! -d "/tmp/deps/cmake" ]]; then mkdir -p "/tmp/deps/cmake" && cd /tmp/deps/cmake && wget https://cmake.org/files/v3.17/cmake-3.17.3-Linux-x86_64.sh && sudo sh cmake-3.17.3-Linux-x86_64.sh --skip-license --prefix=/tmp/deps/cmake; fi && sudo ln -s /tmp/deps/cmake /usr/local/cmake && sudo ln -s /tmp/deps/cmake/bin/cmake /usr/local/bin/cmake && export PATH=/usr/local/cmake:/usr/local/cmake/bin:$PATH && cmake --version        
-        export CXX="g++-9" CC="gcc-9" AR="gcc-ar-9" NM="gcc-nm-9" RANLIB="gcc-ranlib-9"
-        export CMAKE_C_COMPILER="/usr/bin/gcc-9"
-        export CMAKE_CXX_COMPILER="/usr/bin/g++-9"
-        export CMAKE_AR="/usr/bin/gcc-ar-9"
-        export CMAKE_NM="/usr/bin/gcc-nm-9"
-        export CMAKE_RANLIB="/usr/bin/gcc-ranlib-9"
+        #export CXX="g++-9" CC="gcc-9" AR="gcc-ar-9" NM="gcc-nm-9" RANLIB="gcc-ranlib-9"
+        #export CMAKE_C_COMPILER="/usr/bin/gcc-9"
+        #export CMAKE_CXX_COMPILER="/usr/bin/g++-9"
+        #export CMAKE_AR="/usr/bin/gcc-ar-9"
+        #export CMAKE_NM="/usr/bin/gcc-nm-9"
+        #export CMAKE_RANLIB="/usr/bin/gcc-ranlib-9"
         cc --version && ar --version && nm --version && ranlib --version && ld --version
         curl https://raw.githubusercontent.com/travis-ci/gimme/master/gimme > ~/gimme && chmod +x ~/gimme && eval "$(~/gimme 1.13.1)"
     - name: dependencies
