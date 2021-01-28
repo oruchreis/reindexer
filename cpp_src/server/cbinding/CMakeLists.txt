@@ -18,6 +18,10 @@ set_property(TARGET ${TARGET} PROPERTY POSITION_INDEPENDENT_CODE ON)
 list(APPEND REINDEXER_LIBRARIES reindexer_server_library)
 include_directories(${PROJECT_SOURCE_DIR})
 add_dependencies(${TARGET} reindexer_server_library)
+if (ENABLE_GRPC)
+    add_dependencies(${TARGET} reindexer_grpc_library)
+    list(APPEND REINDEXER_LIBRARIES reindexer_grpc_library)
+endif()
 
 if (NOT MSVC AND (ENABLE_TCMALLOC OR ENABLE_JEMALLOC)) # Extremely needed by malloc ovverrides on GCC
     if (EXISTS /opt/diet/lib-x86_64/libcompat.a)

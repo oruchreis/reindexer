@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <functional>
 #include <vector>
-
+#include <iterator>
 #include "context/fcontext.hpp"
 
 #if defined(REINDEX_WITH_TSAN)
