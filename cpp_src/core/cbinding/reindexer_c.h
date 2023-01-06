@@ -77,7 +77,7 @@ EXPORT void reindexer_disable_logger();
 
 EXPORT void reindexer_init_locale();
 
-EXPORT void malloc_free(void* ptr);
+EXPORT void reindexer_malloc_free(void* ptr);
 
 #ifdef __cplusplus
 }

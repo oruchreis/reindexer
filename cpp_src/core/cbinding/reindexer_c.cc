@@ -742,6 +742,6 @@ void reindexer_init_locale() {
 	});
 }
 
-void malloc_free(void* ptr){
+void reindexer_malloc_free(void* ptr){
 	free(ptr);
 }

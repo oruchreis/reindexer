@@ -38,6 +38,11 @@
           "name": "VCPKG_TARGET_TRIPLET",
           "value": "x64-windows-static",
           "type": "STRING"
+        },
+        {
+          "name": "ENABLE_GRPC",
+          "value": "True",
+          "type": "BOOL"
         }
       ]
     },
