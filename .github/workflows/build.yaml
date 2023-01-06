@@ -3,6 +3,8 @@ name: Build
 on:
   push:
     branches: [ master ]
+  pull_request:
+    branches: [ master ]
 
 jobs:
   windows:
@@ -10,9 +12,10 @@ jobs:
     strategy:
       matrix:
         arch: [x64, Win32]
+      fail-fast: false
     env:
         PLATFORM: ${{ matrix.arch }}
-        COMPILER: MSVC19        
+        COMPILER: MSVC22    
         VCPKG_INSTALLATION_ROOT: c:\vcpkg
         VCPKG_BUILD_TYPE: release
         BUILD_TYPE: RelWithDebInfo
@@ -127,13 +130,14 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-18.04, macos-10.15]
+      fail-fast: false
     runs-on: ${{matrix.os}}
     env:
       OS: ${{matrix.os}}
       BUILD_TYPE: MinSizeRel
       ENABLE_LIBUNWIND: 0
       ENABLE_TCMALLOC: 0
-      ENABLE_JEMALLOC: 0
+      ENABLE_JEMALLOC: 1
       ENABLE_GRPC: 1
       WITH_PYTHON: 0
       WITH_DOXYGEN: 0 # set to 1 when doxy doc deploy is ready

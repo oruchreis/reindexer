@@ -42,6 +42,6 @@
     reindexer_cancel_context;
     reindexer_enable_logger;
     reindexer_disable_logger;
-    malloc_free;
+    reindexer_malloc_free;
   local: *;
 };
