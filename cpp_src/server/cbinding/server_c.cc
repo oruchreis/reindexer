@@ -1,5 +1,6 @@
 #include "server_c.h"
 #include <stdlib.h>
+#include <string.h>
 #include <locale>
 #include <string>
 #include "core/cbinding/reindexer_c.h"
@@ -8,6 +9,7 @@
 #include "debug/backtrace.h"
 
 using namespace reindexer_server;
+using std::string;
 using reindexer::Error;
 
 static Error err_not_init(errNotValid, "Reindexer server has not initialized");
