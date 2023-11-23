@@ -1,5 +1,9 @@
 #pragma once
 
+#ifdef _MSC_VER
+#include <string>
+#endif
+
 #include <cassert>
 #include <cstddef>
 #include <cstdint>

@@ -1,5 +1,7 @@
 #pragma once
-
+#ifdef _MSC_VER
+#include <string>
+#endif
 #include <stdint.h>
 #include <cstring>
 #include <initializer_list>
