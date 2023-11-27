@@ -14,19 +14,9 @@ set(TARGET reindexer_embedded_server)
 
 add_library(${TARGET} SHARED "library_init.cc" "server_c.cc" "../../core/cbinding/reindexer_c.cc")
 #There is a ice bug in gcc when enabled lto, so disabled: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=91288
-if(NOT (CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
+if(NOT APPLE AND NOT MUSL)
     set_property(TARGET ${TARGET} PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
 endif()
-
-# Configure cmake options
-if (MSVC)
-  # Enable C++20 for windows build to be able to use designated initializers.
-  # GCC/Clang support them even with C++17.
-  set(CMAKE_CXX_STANDARD 20)
-else ()
-  set(CMAKE_CXX_STANDARD 17)
-endif ()
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set_property(TARGET ${TARGET} PROPERTY POSITION_INDEPENDENT_CODE ON)
 list(APPEND REINDEXER_LIBRARIES reindexer_server_library)
@@ -54,7 +44,7 @@ if (NOT MSVC
     set_target_properties(${TARGET} PROPERTIES LINK_SEARCH_END_STATIC 1)
     set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
     target_link_options(${TARGET} PRIVATE --verbose)
-    if (NOT (CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
+    if (NOT APPLE AND NOT MUSL)
         set(CMAKE_SHARED_LINKER_FLAGS "-static-libgcc -static-libstdc++")
         target_link_options(${TARGET} PRIVATE 
         -Wl,-Bsymbolic -Wl,-Bsymbolic-functions
