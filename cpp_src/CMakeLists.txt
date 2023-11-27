@@ -398,7 +398,7 @@ else ()
   ExternalProject_Add(
     snappy_lib
     GIT_REPOSITORY "https://github.com/google/snappy.git"
-    GIT_TAG "1.1.8"
+    GIT_TAG "1.2.1"
     CMAKE_ARGS -DSNAPPY_BUILD_TESTS=OFF -DCMAKE_INSTALL_PREFIX=${CMAKE_CURRENT_BINARY_DIR}
     -DCMAKE_INSTALL_LIBDIR=${CMAKE_CURRENT_BINARY_DIR}
     -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}    
@@ -461,7 +461,7 @@ if(ENABLE_ROCKSDB)
         ExternalProject_Add(
             rocksdb_lib
             GIT_REPOSITORY "https://github.com/facebook/rocksdb.git"
-            GIT_TAG "v6.27.3"
+            GIT_TAG "v9.7.2"
             INSTALL_COMMAND cmake -E echo "Skipping install step."
             CMAKE_ARGS "${CMAKE_ARGS}"        
         )
@@ -608,20 +608,36 @@ list(APPEND REINDEXER_LIBRARIES friso_dict_resources)
 add_dependencies(${TARGET} friso_dict_resources)
 
 if(WITH_CPPTRACE)
-  ExternalProject_Add(
-    cpptrace_lib
-    GIT_REPOSITORY "https://github.com/jeremy-rifkin/cpptrace.git"
-    GIT_TAG "v0.3.1"
-    CMAKE_ARGS -DCMAKE_INSTALL_LIBDIR=${CMAKE_CURRENT_BINARY_DIR}	
-      -DCMAKE_INSTALL_PREFIX=${CMAKE_CURRENT_BINARY_DIR}
-      -DCPPTRACE_BUILD_SHARED=Off
-      -DCPPTRACE_GET_SYMBOLS_WITH_DBGHELP=On
-      -DCPPTRACE_UNWIND_WITH_DBGHELP=On
-      -DCPPTRACE_DEMANGLE_WITH_WINAPI=On	
-  )
-  add_definitions(-DREINDEX_WITH_CPPTRACE)
-  add_dependencies(reindexer cpptrace_lib)
-  list(APPEND REINDEXER_LIBRARIES cpptrace ${REINDEXER_LIBRARIES})
+  find_package(cpptrace)  
+  if (cpptrace_LIBRARY AND cpptrace_INCLUDE_DIR)
+    if (MSVC)
+        STRING(REGEX REPLACE "[.]dll$" ".lib" STATIC_cpptrace_LIB ${cpptrace_LIBRARY})
+    else()
+        STRING(REGEX REPLACE "[.](so|dylib)$" ".a" STATIC_cpptrace_LIB ${cpptrace_LIBRARY})
+    endif()
+      message (STATUS "Found cpptrace: ${STATIC_cpptrace_LIB}")
+      include_directories(${cpptrace_INCLUDE_DIR})
+      list (APPEND REINDEXER_LIBRARIES ${STATIC_cpptrace_LIB})
+  else()
+      ExternalProject_Add(
+        cpptrace_lib
+        GIT_REPOSITORY "https://github.com/jeremy-rifkin/cpptrace.git"
+        GIT_TAG "v0.7.2"
+        CMAKE_ARGS -DCMAKE_INSTALL_LIBDIR=${CMAKE_CURRENT_BINARY_DIR}	
+          -DCMAKE_INSTALL_PREFIX=${CMAKE_CURRENT_BINARY_DIR}
+          -DCPPTRACE_BUILD_SHARED=Off
+          -DCPPTRACE_GET_SYMBOLS_WITH_DBGHELP=On
+          -DCPPTRACE_UNWIND_WITH_DBGHELP=On
+          -DCPPTRACE_DEMANGLE_WITH_WINAPI=On
+      )      
+      add_dependencies(reindexer cpptrace_lib)
+  
+      include_directories(${CMAKE_CURRENT_BINARY_DIR}/include)
+      link_directories(${CMAKE_CURRENT_BINARY_DIR})
+      list(APPEND REINDEXER_LINK_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR})
+      list(APPEND REINDEXER_LIBRARIES cpptrace ${REINDEXER_LIBRARIES})
+    endif()
+    add_definitions(-DREINDEX_WITH_CPPTRACE)
 endif()
 
 # librt
