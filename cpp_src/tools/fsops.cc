@@ -26,9 +26,11 @@ namespace fs {
 			if (*p == '/' || *p == '\\') {
 				*p = 0;
 				err = mkdir(tmp, S_IRWXU);
+#ifndef _WIN32 //it can fail if the path starts with a drive letter like C:\ or the user can acces sub path but can't access upper path. so we must continue trying to mkdir to most inner path.
 				if ((err < 0) && (errno != EEXIST)) {
 					return err;
 				}
+#endif
 				*p = '/';
 			}
 		}
