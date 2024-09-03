@@ -139,7 +139,7 @@ jobs:
         uses: actions/checkout@v3
       - name: Download ${{matrix.os}}${{matrix.sanitizer}} Artifacts
         if: ${{ matrix.os != 'macos-latest' || matrix.test == 'GO' }}
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4.1.7
         with:
           name: ${{matrix.os}}${{matrix.sanitizer}}
       - name: 'Untar Artifacts'
@@ -186,7 +186,7 @@ jobs:
       OS: ${{matrix.os}}
     steps:
       - name: Download ${{matrix.os}} Artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4.1.7
         with:
           name: ${{matrix.os}}
       - name: 'Untar Artifacts'
