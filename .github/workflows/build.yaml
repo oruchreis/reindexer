@@ -1,6 +1,7 @@
 name: Build
 
 on:
+  workflow_dispatch:
   push:
     branches: [ master ]
   pull_request:
@@ -13,19 +14,21 @@ jobs:
       matrix:
         arch: [x64, Win32]
       fail-fast: false
-    env:
-        PLATFORM: ${{ matrix.arch }}
-        COMPILER: "Visual Studio 17 2022"
-        VCPKG_INSTALLATION_ROOT: c:\vcpkg
-        VCPKG_BUILD_TYPE: release
-        BUILD_TYPE: RelWithDebInfo
-        ENABLE_GRPC: On
+    env:      
+      COMPILER: "Visual Studio 17 2022"
+      VCPKG_INSTALLATION_ROOT: c:\vcpkg
+      VCPKG_BUILD_TYPE: release
+      BUILD_TYPE: MinSizeRel
+      ENABLE_GRPC: On
+      WITH_LTO: On
+      VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
     steps:
     - uses: actions/checkout@v4
       with:      
         fetch-depth: 100
     - name: Fetch tags
       run: git fetch --depth=100 origin +refs/tags/*:refs/tags/*
+    - uses: ilammy/msvc-dev-cmd@v1
     - name: Setup cmake
       uses: jwlawson/actions-setup-cmake@v1.12
       with:
@@ -34,17 +37,16 @@ jobs:
       id: cache
       with:
         path: |
-          ${{ env.VCPKG_INSTALLATION_ROOT }}\archives
-          ${{ env.VCPKG_INSTALLATION_ROOT }}\build*
-          ${{ env.VCPKG_INSTALLATION_ROOT }}\buildtrees
-          ${{ env.VCPKG_INSTALLATION_ROOT }}\downloads
-          ${{ env.VCPKG_INSTALLATION_ROOT }}\installed*
-          ${{ env.VCPKG_INSTALLATION_ROOT }}\packages
           ${{ github.workspace }}\build\cpp_src\rocksdb_lib-prefix
-          ~\AppData\Local\vcpkg
           ~\AppData\Local\pip\Cache
         key: ${{ runner.os }}-${{ matrix.arch }}-v4-${{ hashFiles('*.lib') }}
         restore-keys: ${{ runner.os }}-${{ matrix.arch }}-v4-
+    - name: Export Actions Cache Variables for Vcpkg
+      uses: actions/github-script@v7
+      with:
+        script: |
+          core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+          core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
     - name: Dependencies
       run: |
         cmake --version
@@ -54,13 +56,22 @@ jobs:
         pip3 install grpcio-tools
     - name: Setup Vcpkg
       run: |
+        $env:PLATFORM="${{ matrix.arch }}"
+        echo ("PLATFORM=$($env:PLATFORM)") >> $env:GITHUB_ENV
         echo ("VCPKG_ROOT=$($env:VCPKG_INSTALLATION_ROOT)") >> $env:GITHUB_ENV
         $env:VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT
         if (!(Test-Path -Path $env:VCPKG_ROOT))
         {
           git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT --depth 1
           cd $env:VCPKG_ROOT
+          mv triplets/community/x86-windows-static.cmake triplets/
           .\bootstrap-vcpkg.bat
+        }
+        elseif ($env:PLATFORM -eq "Win32")
+        {
+            cd $env:VCPKG_ROOT
+            mv triplets/community/x86-windows-static.cmake triplets/
+            .\bootstrap-vcpkg.bat
         }
         cd $env:VCPKG_ROOT
         .\vcpkg integrate install
@@ -78,9 +89,9 @@ jobs:
         $env:VCPKG_DEFAULT_TRIPLET=$env:VCPKG_TARGET_TRIPLET
         echo ("VCPKG_TARGET_TRIPLET=$($env:VCPKG_TARGET_TRIPLET)") >> $env:GITHUB_ENV
         echo ("VCPKG_DEFAULT_TRIPLET=$($env:VCPKG_DEFAULT_TRIPLET)") >> $env:GITHUB_ENV
-        Add-Content -Path .\triplets\*.cmake "set(VCPKG_BUILD_TYPE release)`nset(VCPKG_LIBRARY_LINKAGE static)`nset(VCPKG_CRT_LINKAGE static)"        
+        Get-ChildItem ".\triplets\" -Recurse -Filter *.cmake | %{ Add-Content -Path $_.FullName "`nset(VCPKG_BUILD_TYPE release)`nset(VCPKG_LIBRARY_LINKAGE static)`nset(VCPKG_CRT_LINKAGE static)" }
         New-Item -ItemType Directory -Force -Path "$($env:VCPKG_ROOT)\\installed\\$($env:VCPKG_TARGET_TRIPLET)\\lib\\"
-        .\vcpkg install zlib zstd lz4 crc32c cpptrace snappy[*] protobuf[*] grpc[*] --triplet $env:VCPKG_TARGET_TRIPLET --recurse --keep-going --binarycaching --binarysource=default,readwrite
+        .\vcpkg install zlib zstd bzip2 lz4 crc32c cpptrace snappy[*] rocksdb[bzip2,lz4,snappy,tbb,zlib,zstd] protobuf[*] grpc[*] --triplet $env:VCPKG_TARGET_TRIPLET --recurse --keep-going --binarycaching --binarysource=default,readwrite
         dir "$($env:VCPKG_ROOT)\\installed\\$($env:VCPKG_TARGET_TRIPLET)\\lib\\"
         copy "$($env:VCPKG_ROOT)\\installed\\$($env:VCPKG_TARGET_TRIPLET)\\lib\\*.lib" "$($env:GITHUB_WORKSPACE)\\depended_libs" #for cache key hashFiles
     - name: Build Reindexer
@@ -93,6 +104,8 @@ jobs:
         $env:ZLIB_LIB_RELEASE="$($env:THIRDPARTY_HOME)\\lib\zlib.lib"
         $env:LZ4_INCLUDE="$($env:THIRDPARTY_HOME)\\include"
         $env:LZ4_LIB_RELEASE="$($env:THIRDPARTY_HOME)\\lib\lz4.lib"
+        $env:CPPTRACE_INCLUDE="$($env:THIRDPARTY_HOME)\\include"
+        $env:CPPTRACE_LIB_RELEASE="$($env:THIRDPARTY_HOME)\\lib\cpptrace.lib"
         $env:SNAPPY_INCLUDE="$($env:THIRDPARTY_HOME)\\include"
         $env:SNAPPY_LIB_RELEASE="$($env:THIRDPARTY_HOME)\\lib\snappy.lib"
         $env:JEMALLOC_INCLUDE="$($env:GITHUB_WORKSPACE)\\externals\\jemalloc\\include\\"
@@ -101,23 +114,19 @@ jobs:
         git describe --tags
         if (!(Test-Path -Path build)){ mkdir build }
         cd build            
-        cmake -G "Visual Studio 17 2022" -A "$($env:PLATFORM)" -DCMAKE_CXX_STANDARD=20 -DCMAKE_TOOLCHAIN_FILE="$($env:VCPKG_ROOT)/scripts/buildsystems/vcpkg.cmake" -DCMAKE_BUILD_TYPE="$($env:BUILD_TYPE)" -DVCPKG_TARGET_TRIPLET="$($env:VCPKG_TARGET_TRIPLET)" -DLINK_TYPE=Static -DENABLE_GRPC="$($env:ENABLE_GRPC)" ..
+        cmake -G "Visual Studio 17 2022" -A "$($env:PLATFORM)" -DCMAKE_CXX_STANDARD=20 -DCMAKE_TOOLCHAIN_FILE="$($env:VCPKG_ROOT)/scripts/buildsystems/vcpkg.cmake" -DCMAKE_BUILD_TYPE="$($env:BUILD_TYPE)" -DVCPKG_TARGET_TRIPLET="$($env:VCPKG_TARGET_TRIPLET)" -DLINK_TYPE=Static -DENABLE_GRPC="$($env:ENABLE_GRPC)" -DWITH_LTO="$($env:WITH_LTO)" -DLINK_RESOURCES=On ..
         cmake --build . --config "$($env:BUILD_TYPE)"
+    - name: Check Dependencies
+      run: |
+        Get-ChildItem "${{ github.workspace }}\build\cpp_src\server\cbinding" -Recurse -Filter *.dll | % { dumpbin.exe /DEPENDENTS $_.FullName }
     - name: Save Deps to cache
       if: always() #&& steps.cache.outputs.cache-hit != 'true'
       uses: martijnhols/actions-cache/save@v3
       with:
         path: |
-          ${{ env.VCPKG_INSTALLATION_ROOT }}\archives
-          ${{ env.VCPKG_INSTALLATION_ROOT }}\build*
-          ${{ env.VCPKG_INSTALLATION_ROOT }}\buildtrees
-          ${{ env.VCPKG_INSTALLATION_ROOT }}\downloads
-          ${{ env.VCPKG_INSTALLATION_ROOT }}\installed*
-          ${{ env.VCPKG_INSTALLATION_ROOT }}\packages
           ${{ github.workspace }}\build\cpp_src\rocksdb_lib-prefix
-          ~\AppData\Local\vcpkg
           ~\AppData\Local\pip\Cache
-        key: ${{ runner.os }}-${{ matrix.arch }}-v4-${{ hashFiles('depended_libs/*.lib') }}
+        key: ${{ runner.os }}-${{ matrix.arch }}-v4-${{ hashFiles('build/cpp_src/rocksdb_lib-prefix/*.lib') }}
     - name: Artifacts
       uses: actions/upload-artifact@v4
       with:
@@ -137,7 +146,7 @@ jobs:
             runs-on: ubuntu-latest
             shell: alpine.sh --root
           - name: macos
-            runs-on: macos-latest
+            runs-on: macos-13
             shell: bash -e
       fail-fast: false
     runs-on: ${{matrix.target.runs-on}}
@@ -148,6 +157,7 @@ jobs:
       ENABLE_TCMALLOC: 0
       ENABLE_JEMALLOC: 0
       ENABLE_GRPC: 1
+      WITH_LTO: On
       WITH_PYTHON: 0
       WITH_DOXYGEN: 0 # set to 1 when doxy doc deploy is ready
     steps:
@@ -173,32 +183,18 @@ jobs:
       id: alpine-target
       with:
         arch: x86_64
-        branch: v3.20 # build-base
-        packages: >          
-          pkgconf          
+        branch: v3.20
+        packages: >
+          build-base
+          lld
+          pkgconf
           sudo
           bash
-          clang
-          clang-dev
-          llvm
-          llvm-dev
-          llvm-static
-          lld
-          lldb
-          libc++
-          libc++-dev          
-          libunwind-static
-          libunwind-dev
-          clang-ccache
-          clang-dev
-          clang-headers
-          clang-static
-          clang-libs
-          clang-libclang
-          clang-extra-tools
+          autoconf automake libtool linux-headers make gcc g++ musl-dev libunwind-static patch
           alpine-sdk
           dpkg
-          cmake
+          cmake        
+          ninja-build
           ccache
           python3
           py3-pip
@@ -218,25 +214,33 @@ jobs:
           /usr/local/Homebrew
           ~/Library/Caches/pip
           ${{ steps.alpine-target.outputs.root-path }}/home/runner/deps/
-        key: ${{ matrix.target.name }}-v4-${{ hashFiles('*.a') }}
+        key: ${{ matrix.target.name }}-v4- # ${{ hashFiles('*.a') }}
         restore-keys: ${{ matrix.target.name }}-v4-
     - name: Setup Ubuntu
       if: startsWith(matrix.target.name,'ubuntu')
       run: |        
         echo 'SED=sed' >> $GITHUB_ENV
-        echo 'SECTION_FLAGS=-ffunction-sections -fdata-sections -Wl,--gc-sections' >> $GITHUB_ENV # -rdynamic"
+        echo 'SECTION_FLAGS=-ffunction-sections -fdata-sections -Wl,--gc-sections -s' >> $GITHUB_ENV # -rdynamic"
         echo 'LIBUNWIND_LIB=/usr/lib/x86_64-linux-gnu/libunwind.a' >> $GITHUB_ENV
-        sudo apt-get -qq update > /dev/null && sudo apt-get -qq install -y -f build-essential binutils autopoint libunwind-dev curl git flex python3-dev python3-pip python3-venv python3-wheel python3-setuptools python3-grpcio libssl-dev
+        sudo apt-get -qq update > /dev/null && sudo apt-get -qq install -y -f build-essential lld ninja-build autopoint libunwind-dev curl git flex python3-dev python3-pip python3-venv python3-wheel python3-setuptools python3-grpcio libssl-dev
         sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 10
         sudo update-alternatives --install /usr/bin/cc cc /usr/bin/gcc-10 10
         sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-10 10
         sudo update-alternatives --install /usr/bin/c++ c++ /usr/bin/g++-10 10
+        # sudo update-alternatives --install /usr/bin/ld ld /usr/bin/ld.lld 10
+        sudo update-alternatives --set g++ /usr/bin/g++-10
+        sudo update-alternatives --set gcc /usr/bin/gcc-10
+        # sudo update-alternatives --set ld /usr/bin/ld.lld
+        sudo update-alternatives --auto g++
+        sudo update-alternatives --auto gcc
+        # sudo update-alternatives --auto ld
         export CXX="g++-10" CC="gcc-10" AR="gcc-ar-10" NM="gcc-nm-10" RANLIB="gcc-ranlib-10"
         echo "CC=${CC}" >> $GITHUB_ENV
         echo "CXX=${CXX}" >> $GITHUB_ENV
         echo "AR=${AR}" >> $GITHUB_ENV
         echo "NM=${NM}" >> $GITHUB_ENV
         echo "RANLIB=${RANLIB}" >> $GITHUB_ENV
+        # echo "LDFLAGS=-fuse-ld=lld" >> $GITHUB_ENV
         export CMAKE_C_COMPILER="/usr/bin/gcc-10"
         export CMAKE_CXX_COMPILER="/usr/bin/g++-10"
         export CMAKE_AR="/usr/bin/gcc-ar-10"
@@ -248,33 +252,18 @@ jobs:
       if: startsWith(matrix.target.name,'alpine')
       run: |
         #!/bin/bash
+        echo 'SED=sed' >> $GITHUB_ENV
         cat /etc/alpine-release
         echo "OPENSSL_STATIC=1" >> $GITHUB_ENV
         echo "PIP_BREAK_SYSTEM_PACKAGES=1" >> $GITHUB_ENV
-        echo 'SECTION_FLAGS=-ffunction-sections -fdata-sections -flto' >> $GITHUB_ENV
-        ln -sf /usr/bin/clang /usr/bin/cc
-        ln -sf /usr/bin/clang++ /usr/bin/c++
-        update-alternatives --install /usr/bin/cc cc /usr/bin/clang 10
-        update-alternatives --install /usr/bin/c++ c++ /usr/bin/clang++ 10        
-        update-alternatives --auto cc
-        update-alternatives --auto c++
-        update-alternatives --display cc
-        update-alternatives --display c++
-        echo "CC=/usr/bin/clang" >> $GITHUB_ENV
-        echo "CXX=/usr/bin/clang++" >> $GITHUB_ENV
-        echo "CMAKE_C_COMPILER=/usr/bin/cc" >> $GITHUB_ENV
-        echo "CMAKE_CXX_COMPILER=/usr/bin/c++" >> $GITHUB_ENV
-        echo "CMAKE_AR=/usr/bin/llvm-ar" >> $GITHUB_ENV
-        echo "CMAKE_AS=/usr/bin/llvm-as" >> $GITHUB_ENV
-        echo "CMAKE_NM=/usr/bin/llvm-nm" >> $GITHUB_ENV
-        echo "CMAKE_RANLIB=/usr/bin/llvm-ranlib" >> $GITHUB_ENV
-        echo "AR=/usr/bin/llvm-ar" >> $GITHUB_ENV
-        echo "AS=/usr/bin/llvm-as" >> $GITHUB_ENV
-        echo "NM=/usr/bin/llvm-nm" >> $GITHUB_ENV
-        echo "RANLIB=/usr/bin/llvm-ranlib" >> $GITHUB_ENV
-        echo "LDFLAGS=-fuse-ld=lld -Wl,--undefined-version" >> $GITHUB_ENV
-        echo "CXXFLAGS=-std=c++17" >> $GITHUB_ENV
-        cc --version && c++ --version && ar --version && nm --version && ranlib --version && ld --version && ld.lld --version && llvm-ar --version && llvm-as --version && llvm-nm --version && llvm-ranlib --version
+        echo 'SECTION_FLAGS=-ffunction-sections -fdata-sections -Wl,--gc-sections -s' >> $GITHUB_ENV # -rdynamic"
+        echo 'LIBUNWIND_LIB=/usr/lib/libunwind.a' >> $GITHUB_ENV
+        echo "LDFLAGS=-fuse-ld=lld" >> $GITHUB_ENV
+        echo "/usr/lib/ninja-build/bin/" >> $GITHUB_PATH
+        sudo update-alternatives --install /usr/bin/ld ld /usr/bin/ld.lld 10
+        sudo update-alternatives --set ld /usr/bin/ld.lld
+        sudo update-alternatives --auto ld
+        cc --version && c++ --version && ar --version && nm --version && ranlib --version && ld --version
       shell: shell.sh {0}
     - name: Setup Macos
       if: startsWith(matrix.target.name,'macos')
@@ -283,8 +272,8 @@ jobs:
         echo 'SECTION_FLAGS=-ffunction-sections -fdata-sections -flto' >> $GITHUB_ENV
         #echo 'LIBUNWIND_LIB=' >> $GITHUB_ENV
         echo "PIP_BREAK_SYSTEM_PACKAGES=1" >> $GITHUB_ENV
-        brew update > /dev/null && brew install --force --overwrite gnu-sed flex gettext autoconf automake libtool cvs python pkg-config # openssl@1.1 re2
-        export PATH=${PATH}:/usr/local/opt/gettext/bin
+        brew update > /dev/null && brew install --force --overwrite gnu-sed flex gettext autoconf automake ninja libtool cvs python pkg-config # openssl@1.1 re2
+        echo "PATH=${PATH}:/usr/local/opt/gettext/bin" >> $GITHUB_ENV     
         # brew link --force openssl@1.1
         # export PKG_CONFIG_PATH="/usr/local/opt/openssl@1.1/lib/pkgconfig"
         # pkg-config --modversion openssl
@@ -294,33 +283,40 @@ jobs:
     - name: Setup Common
       run: |
         #!/bin/bash
+        echo "OS=${{ matrix.target.name }}" >> $GITHUB_ENV
         cmake --version
         if [[ ${PIP_BREAK_SYSTEM_PACKAGES} -eq 1 ]]; then
           sudo pip3 install --break-system-packages grpcio-tools grpcio-tools
         else
           sudo pip3 install grpcio grpcio-tools
         fi;
-        export REINDEXER_OPTS="-DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DENABLE_LIBUNWIND=${ENABLE_LIBUNWIND} -DENABLE_JEMALLOC=${ENABLE_JEMALLOC} -DENABLE_TCMALLOC=${ENABLE_TCMALLOC} -DENABLE_GRPC=${ENABLE_GRPC} -DWITH_PYTHON=${WITH_PYTHON}"
+        export REINDEXER_OPTS="-DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DWITH_LTO=${WITH_LTO} -DENABLE_LIBUNWIND=${ENABLE_LIBUNWIND} -DENABLE_JEMALLOC=${ENABLE_JEMALLOC} -DENABLE_TCMALLOC=${ENABLE_TCMALLOC} -DENABLE_GRPC=${ENABLE_GRPC} -DWITH_PYTHON=${WITH_PYTHON} -DLINK_RESOURCES=On"
         echo "REINDEXER_OPTS=$REINDEXER_OPTS" >> $GITHUB_ENV
       shell: shell.sh {0}
     - name: Build Static Dependencies
+      id: dependencies
       run: |
-        bash -e <<'EOF'
+        bash -e <<'EOF'        
         echo '::echo::off'
         echo "::group::Set Compiler Flags"
         git config --global --add safe.directory '*'
-        export CFLAGS="${CFLAGS} -g0 -Os -fPIC" # -fvisibility=hidden ${SECTION_FLAGS}"
-        export CXXFLAGS="${CXXFLAGS} -g0 -Os -fPIC" # -fvisibility=hidden -fvisibility-inlines-hidden ${SECTION_FLAGS}"
-        COMMON_MAKE_ARGS=(--no-print-directory -j4 CFLAGS="${CFLAGS}" CXXFLAGS="${CFLAGS}" PREFIX=/usr/local)
-        COMMON_CMAKE_ARGS=(-DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_BUILD_TYPE=MinSizeRel -DCMAKE_POSITION_INDEPENDENT_CODE=1 -DCMAKE_FIND_LIBRARY_SUFFIXES=".a" -DCMAKE_LINK_SEARCH_START_STATIC=1 -DCMAKE_LINK_SEARCH_END_STATIC=1)
+        export CFLAGS="${CFLAGS} -g0 -Os -DNDEBUG -fPIC" # -fvisibility=hidden ${SECTION_FLAGS}"
+        export CXXFLAGS="${CXXFLAGS} -std=c++17 -g0 -Os -DNDEBUG -fPIC" # -fvisibility=hidden -fvisibility-inlines-hidden ${SECTION_FLAGS}"
+        COMMON_MAKE_ARGS=(--no-print-directory -j4 CFLAGS="${CFLAGS}" CXXFLAGS="${CXXFLAGS}" PREFIX=/usr/local)
+        COMMON_CMAKE_ARGS=(${COMMON_CMAKE_ARGS} "-DCMAKE_C_FLAGS=${CFLAGS}" "-DCMAKE_CXX_FLAGS=${CXXFLAGS}" -DCMAKE_C_STANDARD=17 -DCMAKE_CXX_STANDARD=17 -DLLVM_CXX_STD=c++17 -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_BUILD_TYPE=MinSizeRel -DCMAKE_POSITION_INDEPENDENT_CODE=1 -DCMAKE_FIND_LIBRARY_SUFFIXES=\".a\" -DCMAKE_LINK_SEARCH_START_STATIC=1 -DCMAKE_LINK_SEARCH_END_STATIC=1)
         echo "::endgroup::"
         echo "::group::Google Test & Benchmark & PerfTools"
-        if [[ ! -d "$HOME/deps/googletest/.git" ]]; then git clone https://github.com/google/googletest.git ~/deps/googletest --depth 1; fi && cd ~/deps/googletest && git pull && cmake -DBUILD_GMOCK=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-std=c++11" . && make -j4 && sudo make install VERBOSE=1
+        if [[ ! -d "$HOME/deps/googletest/.git" ]]; then git clone https://github.com/google/googletest.git ~/deps/googletest --depth 1; fi && cd ~/deps/googletest && git pull && cmake -DBUILD_GMOCK=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-std=c++17" . && make -j4 && sudo make install VERBOSE=1
         if [[ ! -d "$HOME/deps/googlebench/.git" ]]; then git clone --branch v1.4.0 https://github.com/google/benchmark.git ~/deps/googlebench --depth 1; fi && cd ~/deps/googlebench && cmake -DBENCHMARK_ENABLE_TESTING=Off -DCMAKE_BUILD_TYPE=Release . && make -j4 && sudo make install VERBOSE=1
         if [[ ${ENABLE_TCMALLOC} -eq 1 ]]; then if [[ ! -d "$HOME/deps/gperftools/.git" ]]; then git clone --branch master https://github.com/gperftools/gperftools.git ~/deps/gperftools --depth 1 && cd ~/deps/gperftools && ./autogen.sh; fi && cd ~/deps/gperftools && git pull && ./configure --disable-shared --enable-static --enable-libunwind=${ENABLE_LIBUNWIND} --enable-frame-pointers CFLAGS="${CFLAGS}" CXXFLAGS="${CFLAGS}" && make "${COMMON_MAKE_ARGS[@]}" && sudo make install VERBOSE=1; else sudo rm -rf  /usr/local/lib/*tcmalloc.*; fi
         echo "::endgroup::"
+        # echo "::group::Abseil"
+        # if [[ ! -d "$HOME/deps/absl/.git" ]]; then git clone --branch 20240116.2 --recursive https://github.com/abseil/abseil-cpp.git ~/deps/absl --depth 1 && mkdir -p ~/deps/absl/__build; fi && cd ~/deps/absl/__build && git pull && cmake -DABSL_ENABLE_INSTALL=ON -DCMAKE_INSTALL_PREFIX=/usr/local -DABSL_BUILD_TESTING=OFF -DABSL_USE_GOOGLETEST_HEAD=OFF -DABSL_PROPAGATE_CXX_STD=ON "${COMMON_CMAKE_ARGS[@]}" .. && sudo rm -rf /usr/local/include/absl && sudo rm -rf /usr/local/lib/libabsl* && sudo cmake --build . --target install
+        # echo "::endgroup::"
         echo "::group::Zlib"
         if [[ ! -d "$HOME/deps/zlib/.git" ]]; then git clone --branch master https://github.com/madler/zlib.git ~/deps/zlib; fi && cd ~/deps/zlib && ./configure --static && make libz.a "${COMMON_MAKE_ARGS[@]}" && sudo make install libz.a VERBOSE=1 && sudo rm -rf /usr/local/lib/libz.so* /usr/local/lib/libz.dylib* 
+        export ZLIB_LIBRARIES=/usr/local/lib/libz.a && echo "ZLIB_LIBRARIES=/usr/local/lib/libz.a" >> $GITHUB_ENV
+        export ZLIB_INCLUDE_DIRS=/usr/local/include/zlib && echo "ZLIB_INCLUDE_DIRS=/usr/local/include/zlib" >> $GITHUB_ENV
         echo "::endgroup::"
         echo "::group::Bzip2"
         if [[ ! -d "$HOME/deps/bzip2/.git" ]]; then git clone --branch master https://sourceware.org/git/bzip2.git ~/deps/bzip2; fi && cd ~/deps/bzip2 && git pull && make libbz2.a "${COMMON_MAKE_ARGS[@]}" && sudo make install libbz2.a VERBOSE=1 && sudo rm -rf /usr/local/lib/libbz2.so* /usr/local/lib/libbz2.dylib*
@@ -329,23 +325,23 @@ jobs:
         if [[ ! -d "$HOME/deps/lz4/.git" ]]; then git clone --branch release https://github.com/lz4/lz4.git ~/deps/lz4 --depth 1; fi && cd ~/deps/lz4 && git pull && make liblz4.a "${COMMON_MAKE_ARGS[@]}" && sudo make uninstall VERBOSE=1 && sudo make install liblz4.a VERBOSE=1 && sudo rm -rf /usr/local/lib/liblz4.so* /usr/local/lib/liblz4.dylib*
         echo "::endgroup::"
         echo "::group::Zstd"
-        if [[ ! -d "$HOME/deps/zstd/.git" ]]; then git clone --branch release https://github.com/facebook/zstd.git ~/deps/zstd --depth 1 && mkdir -p ~/deps/zstd/build/cmake/build; fi && cd ~/deps/zstd/build/cmake/build && git pull && cmake -DZSTD_BUILD_TESTS=OFF -DZSTD_BUILD_PROGRAMS=OFF -DZSTD_BUILD_STATIC=ON -DZSTD_BUILD_SHARED=OFF ${COMMON_CMAKE_ARGS[*]} .. && make -j4 && sudo make install VERBOSE=1 && sudo rm -rf /usr/local/lib/libzstd.so* /usr/local/lib/libzstd.dylib*
+        if [[ ! -d "$HOME/deps/zstd/.git" ]]; then git clone --branch release https://github.com/facebook/zstd.git ~/deps/zstd --depth 1 && mkdir -p ~/deps/zstd/build/cmake/__build; fi && cd ~/deps/zstd/build/cmake/__build && git pull && cmake -DZSTD_BUILD_TESTS=OFF -DZSTD_BUILD_PROGRAMS=OFF -DZSTD_BUILD_STATIC=ON -DZSTD_BUILD_SHARED=OFF "${COMMON_CMAKE_ARGS[@]}" .. && make -j4 && sudo make install VERBOSE=1 && sudo rm -rf /usr/local/lib/libzstd.so* /usr/local/lib/libzstd.dylib*
         echo "::endgroup::"
         echo "::group::Lzma"
-        if [[ ${ENABLE_LIBUNWIND} -eq 1 ]]; then if [[ ! -d "$HOME/deps/liblzma/.git" ]]; then git clone --branch master https://github.com/kobolabs/liblzma.git ~/deps/liblzma --depth 1 && cd ~/deps/liblzma && ./autogen.sh; fi && cd ~/deps/liblzma && git pull && ./configure --disable-shared CFLAGS="${CFLAGS}" CXXFLAGS="${CFLAGS}" && make "${COMMON_MAKE_ARGS[@]}" && sudo make install VERBOSE=1; else sudo rm -rf /usr/lib/x86_64-linux-gnu/liblzma.a; fi
+        if [[ ${ENABLE_LIBUNWIND} -eq 1 ]]; then if [[ ! -d "$HOME/deps/liblzma/.git" ]]; then git clone --branch master https://github.com/kobolabs/liblzma.git ~/deps/liblzma --depth 1 && cd ~/deps/liblzma && ./autogen.sh; fi && cd ~/deps/liblzma && git pull && ./configure --disable-shared CFLAGS="${CFLAGS}" CXXFLAGS="${CXXFLAGS}" && make "${COMMON_MAKE_ARGS[@]}" && sudo make install VERBOSE=1; else sudo rm -rf /usr/lib/x86_64-linux-gnu/liblzma.a; fi
         echo "::endgroup::"
         echo "::group::Crc32"
-        if [[ ! -d "$HOME/deps/crc32c/.git" ]]; then git clone --branch main https://github.com/google/crc32c.git ~/deps/crc32c --depth 1 && mkdir -p ~/deps/crc32c/build; fi && cd ~/deps/crc32c/build && git pull && CXXFLAGS="-g0 -Os" cmake -DCRC32C_BUILD_TESTS=0 -DCRC32C_BUILD_BENCHMARKS=0 -DCRC32C_USE_GLOG=0 -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_BUILD_TYPE=MinSizeRel -DCMAKE_POSITION_INDEPENDENT_CODE=1 -DCMAKE_FIND_LIBRARY_SUFFIXES=".a" -DCMAKE_LINK_SEARCH_START_STATIC=1 -DCMAKE_LINK_SEARCH_END_STATIC=1 .. && make -j4 && sudo make install VERBOSE=1
+        if [[ ! -d "$HOME/deps/crc32c/.git" ]]; then git clone --branch main https://github.com/google/crc32c.git ~/deps/crc32c --depth 1 && mkdir -p ~/deps/crc32c/__build; fi && cd ~/deps/crc32c/__build && git pull && CXXFLAGS="-g0 -Os" cmake -DCRC32C_BUILD_TESTS=0 -DCRC32C_BUILD_BENCHMARKS=0 -DCRC32C_USE_GLOG=0 -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_BUILD_TYPE=MinSizeRel -DCMAKE_POSITION_INDEPENDENT_CODE=1 -DCMAKE_FIND_LIBRARY_SUFFIXES=".a" -DCMAKE_LINK_SEARCH_START_STATIC=1 -DCMAKE_LINK_SEARCH_END_STATIC=1 .. && make -j4 && sudo make install VERBOSE=1
         echo "::endgroup::"
         echo "::group::Snappy"
-        if [[ ! -d "$HOME/deps/snappy/.git" ]]; then git clone --branch 1.2.1 --recursive https://github.com/google/snappy.git ~/deps/snappy --depth 1 && mkdir -p ~/deps/snappy/build; fi && cd ~/deps/snappy/build && git pull && cmake -DSNAPPY_BUILD_TESTS=OFF ${COMMON_CMAKE_ARGS[*]} .. && make -j4 && sudo make install VERBOSE=1
+        if [[ ! -d "$HOME/deps/snappy/.git" ]]; then git clone --branch 1.2.1 --recursive https://github.com/google/snappy.git ~/deps/snappy --depth 1 && mkdir -p ~/deps/snappy/__build; fi && cd ~/deps/snappy/__build && git pull && cmake -DSNAPPY_BUILD_TESTS=OFF "${COMMON_CMAKE_ARGS[@]}" .. && make -j4 && sudo make install VERBOSE=1
         echo "::endgroup::"
         echo "::group::Jemalloc"
         if [[ ${ENABLE_LIBUNWIND} -eq 1 && ! -z "${LIBUNWIND_LIB}" ]]; then JEMALLOC_ARGS="--enable-prof-libunwind --with-static-libunwind=${LIBUNWIND_LIB}" ; fi
         if [[ ${ENABLE_JEMALLOC} -eq 1 ]]; then if [[ ! -d "$HOME/deps/jemalloc/.git" ]]; then git clone --branch master https://github.com/jemalloc/jemalloc.git ~/deps/jemalloc && cd ~/deps/jemalloc && ./autogen.sh; fi && cd ~/deps/jemalloc && git pull && ./configure $JEMALLOC_ARGS EXTRA_CFLAGS="${CFLAGS}" EXTRA_CXXFLAGS="${CXXFLAGS}" --disable-initial-exec-tls --without-export --disable-libdl --disable-shared --enable-xmalloc --with-malloc-conf="background_thread:true,metadata_thp:auto,percpu_arena:percpu" && make build_lib_static -j4 --no-print-directory && sudo make install VERBOSE=1 && sudo rm -rf /usr/local/lib/libjemalloc.so* /usr/local/lib/libjemalloc.a && sudo mv /usr/local/lib/libjemalloc_pic.a /usr/local/lib/libjemalloc.a; fi
         echo "::endgroup::"
         echo "::group::LevelDb"
-        if [[ ! -d "$HOME/deps/leveldb/.git" ]]; then git clone --branch main https://github.com/google/leveldb.git ~/deps/leveldb --depth 1 && mkdir -p ~/deps/leveldb/build; fi && cd ~/deps/leveldb && git pull
+        if [[ ! -d "$HOME/deps/leveldb/.git" ]]; then git clone --branch main https://github.com/google/leveldb.git ~/deps/leveldb --depth 1 && mkdir -p ~/deps/leveldb/__build; fi && cd ~/deps/leveldb && git pull
         git checkout @ -- CMakeLists.txt &&
           ${SED} -i 's|check_library_exists[(]snappy .*|include_directories(/usr/local/include)\nfind_library(HAVE_SNAPPY NAMES libsnappy.a snappy libsnappy)|' CMakeLists.txt &&
           ${SED} -i 's/check_library_exists[(]crc32c .*/find_library(HAVE_CRC32C NAMES libcrc32c.a crc32c libcrc32c)/' CMakeLists.txt &&
@@ -361,34 +357,51 @@ jobs:
           else
               ${SED} -i 's|target_link_libraries(leveldb tcmalloc)|message(STATUS "Found ${HAVE_TCMALLOC}")\ntarget_link_libraries(leveldb ${HAVE_TCMALLOC})|g' CMakeLists.txt;
           fi
-        cat CMakeLists.txt
-        cd build && cmake -DLEVELDB_BUILD_TESTS=OFF -DLEVELDB_BUILD_BENCHMARKS=OFF -DBUILD_SHARED_LIBS=OFF ${COMMON_CMAKE_ARGS[*]} .. && make leveldb -j4 && sudo make install VERBOSE=1
+        # cat CMakeLists.txt
+        cd __build && cmake -DLEVELDB_BUILD_TESTS=OFF -DLEVELDB_BUILD_BENCHMARKS=OFF -DBUILD_SHARED_LIBS=OFF "${COMMON_CMAKE_ARGS[@]}" .. && cmake --build . --parallel 4 && sudo make install VERBOSE=1
         echo "::endgroup::"
         echo "::group::RocksDb"
-        if [[ ! -d "$HOME/deps/rocksdb/.git" ]]; then git clone --branch v9.7.2 --recursive https://github.com/facebook/rocksdb.git ~/deps/rocksdb --depth 1 && mkdir -p ~/deps/rocksdb/build; fi && cd ~/deps/rocksdb/build && git pull && cmake -DPORTABLE=1 -DWITH_MD_LIBRARY=0 -DROCKSDB_BUILD_SHARED=0 -DWITH_GFLAGS=0 -DWITH_JEMALLOC=${ENABLE_JEMALLOC} -DWITH_SNAPPY=1 -DWITH_LZ4=1 -DWITH_ZSTD=1 -DWITH_ZLIB=1 -DWITH_BZ2=1 -DWITH_BENCHMARK_TOOLS=0 -DWITH_TOOLS=0 -DWITH_CORE_TOOLS=0 -DWITH_TRACE_TOOLS=0 -DWITH_TESTS=0 -DUSE_RTTI=1 -DWITH_RUNTIME_DEBUG=0 -DWITH_JNI=0 -DFAIL_ON_WARNINGS=0 ${COMMON_CMAKE_ARGS[*]} .. && make -j4 && sudo make install VERBOSE=1
-        echo "::endgroup::"
-        echo "::group::Protobuf"
-        if [[ ! -d "$HOME/deps/protobuf/.git" ]]; then git clone --branch v28.2 --recursive https://github.com/protocolbuffers/protobuf.git ~/deps/protobuf --depth 1 && mkdir -p ~/deps/protobuf/build; fi && cd ~/deps/protobuf/build && git pull && cmake -Dprotobuf_WITH_ZLIB=ON ${COMMON_CMAKE_ARGS[*]} .. && make -j4 && sudo make install VERBOSE=1
-        echo "::endgroup::"
-        echo "::group::Grpc"
-        if [[ ! -d "$HOME/deps/grpc/.git" ]]; then git clone --branch v1.67.0 --recursive https://github.com/grpc/grpc ~/deps/grpc --depth 1 && mkdir -p ~/deps/grpc/build_dir; fi && cd ~/deps/grpc && git submodule update --init && cd ~/deps/grpc/build_dir && git pull && cmake -DCMAKE_BUILD_TYPE=Release -DgRPC_INSTALL=ON -DBUILD_SHARED_LIBS=OFF .. && make -j4 && sudo make install VERBOSE=1 # && sudo ldconfig
+        if [[ ! -d "$HOME/deps/rocksdb/.git" ]]; then git clone --branch v9.7.2 --recursive https://github.com/facebook/rocksdb.git ~/deps/rocksdb --depth 1 && mkdir -p ~/deps/rocksdb/__build; fi && cd ~/deps/rocksdb/__build && git pull && cmake -GNinja -DPORTABLE=1 -DWITH_MD_LIBRARY=0 -DROCKSDB_BUILD_SHARED=0 -DWITH_GFLAGS=0 -DWITH_JEMALLOC=${ENABLE_JEMALLOC} -DWITH_SNAPPY=1 -DWITH_LZ4=1 -DWITH_ZSTD=1 -DWITH_ZLIB=1 -DWITH_BZ2=1 -DWITH_BENCHMARK_TOOLS=0 -DWITH_TOOLS=0 -DWITH_CORE_TOOLS=0 -DWITH_TRACE_TOOLS=0 -DWITH_TESTS=0 -DUSE_RTTI=1 -DWITH_RUNTIME_DEBUG=0 -DWITH_JNI=0 -DFAIL_ON_WARNINGS=0 "${COMMON_CMAKE_ARGS[@]}" -DCMAKE_BUILD_TYPE=Release .. && cmake --build . --parallel 4 && sudo cmake --build . --target install -v
         echo "::endgroup::"        
-        if [[ "$RUNNER_OS" == "Linux" && ! -d "/opt/diet/lib-x86_64" ]]; then
-          echo "::group::Diet"
-          sudo mkdir -p /opt/diet/lib-x86_64 &&
-          sudo cp ${GITHUB_WORKSPACE}/externals/dietlibc/libcompat.a /opt/diet/lib-x86_64/;
-          echo "::endgroup::"
-        fi        
-        for lib in z bz2 lz4 zstd lzma crc32c snappy unwind jemalloc leveldb rocksdb grpc ;do sudo du -h "/usr/local/lib/lib$lib.a" "/usr/lib/x86_64-linux-gnu/lib$lib.a" 2> /dev/null || true; done
+        # echo "::group::re2"
+        # if [[ ! -d "$HOME/deps/re2/.git" ]]; then git clone --branch 2024-07-02 --recursive https://github.com/google/re2.git ~/deps/re2 --depth 1 && mkdir -p ~/deps/re2/__build; fi && cd ~/deps/re2/__build && git pull && cmake "${COMMON_CMAKE_ARGS[@]}" .. && cmake --build . --parallel 4 && sudo make install VERBOSE=1
+        # echo "::endgroup::"
+        # echo "::group::Protobuf"
+        # if [[ ! -d "$HOME/deps/protobuf/.git" ]]; then git clone --branch v27.5 --recursive https://github.com/protocolbuffers/protobuf.git ~/deps/protobuf --depth 1 && mkdir -p ~/deps/protobuf/__build; fi && git submodule update --init && cd ~/deps/protobuf/__build && git pull && cmake -Dprotobuf_BUILD_SHARED_LIBS=Off -Dprotobuf_WITH_ZLIB=On -Dprotobuf_BUILD_TESTS=OFF -Dprotobuf_ABSL_PROVIDER=package -Dprotobuf_BUILD_LIBUPB=Off "${COMMON_CMAKE_ARGS[@]}" .. && cmake --build . --parallel 4 && sudo make install VERBOSE=1
+        # echo "::endgroup::"
+        echo "::group::Grpc"
+        if [[ ! -d "$HOME/deps/grpc/.git" ]]; then git clone --branch v1.67.0 --recursive https://github.com/grpc/grpc ~/deps/grpc --depth 1 && mkdir -p ~/deps/grpc/__build; fi && cd ~/deps/grpc && git submodule update --init
+        cd ~/deps/grpc/third_party/re2 && git checkout 2024-07-02 && git pull # re2 in grpc cant be built in alpine, if we use re2 from git repo, we need abseil which we dont' need anywhere instead of grpc, instead we updating re2 in grpc.        
+        cd ~/deps/grpc/__build && git pull
+        cmake -GNinja -DCMAKE_CXX_FLAGS="-std=c++17 -g0 -Os -DNDEBUG -fPIC" -DCMAKE_C_FLAGS="-g0 -Os -DNDEBUG -fPIC" \
+                      -DCMAKE_PREFIX_PATH=/usr/local/ -DgRPC_INSTALL=ON -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF \
+                      -DgRPC_ZLIB_PROVIDER=package -DgRPC_ABSL_PROVIDER=module -DgRPC_RE2_PROVIDER=module \
+                      -DgRPC_PROTOBUF_PROVIDER=module -DCMAKE_C_STANDARD=17 -DCMAKE_CXX_STANDARD=17 -DLLVM_CXX_STD=c++17 \
+                      -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_POSITION_INDEPENDENT_CODE=1 \
+                      -DCMAKE_FIND_LIBRARY_SUFFIXES=".a" -DCMAKE_LINK_SEARCH_START_STATIC=1 \
+                      -DgRPC_BUILD_GRPC_CSHARP_PLUGIN=0 -DgRPC_BUILD_GRPC_NODE_PLUGIN=0 -DgRPC_BUILD_GRPC_PHP_PLUGIN=0 -DgRPC_BUILD_GRPC_PYTHON_PLUGIN=0 -DgRPC_BUILD_GRPC_RUBY_PLUGIN=0 \
+                      -DCMAKE_LINK_SEARCH_END_STATIC=1 .. && cmake --build . --parallel 4 && sudo cmake --build . --target install -v
+        echo "::endgroup::"        
+        # if [[ "$RUNNER_OS" == "Linux" && ! -d "/opt/diet/lib-x86_64" ]]; then
+        #   echo "::group::Diet"
+        #   sudo mkdir -p /opt/diet/lib-x86_64 &&
+        #   sudo cp ${GITHUB_WORKSPACE}/externals/dietlibc/libcompat.a /opt/diet/lib-x86_64/;
+        #   echo "::endgroup::"
+        # fi                
         EOF
       shell: shell.sh {0}
-    - name: Prepare Cache Key
-      if: always()
+    - name: Found Dependencies
       run: |
-        find ~/deps/ -type f -name "*.a" -exec cp -prv '{}' "${GITHUB_WORKSPACE}/" ';' | true #for cache key hashFiles
+        #!/bin/bash
+        for lib in absl* z bz2 lz4 zstd lzma crc32c snappy unwind jemalloc leveldb rocksdb re2 protobuf utf8_range grpc ;do sudo du -h "/usr/local/lib/lib$lib.a" "/usr/lib/x86_64-linux-gnu/lib$lib.a" 2> /dev/null || true; done
       shell: shell.sh {0}
+    # - name: Prepare Cache Key
+    #   if: always()
+    #   run: |
+    #     find ~/deps/ -type f -name "*.a" -exec cp -prv '{}' "${GITHUB_WORKSPACE}/" ';' | true #for cache key hashFiles
+    #   shell: shell.sh {0}
     - name: Save Deps to cache
-      if: always() #&& steps.cache.outputs.primary-key != ${{ matrix.target.name }}-v4-${{ hashFiles('*.a') }}
+      if: steps.dependencies.outcome == 'success'
       uses: martijnhols/actions-cache/save@v3
       with:
         path: |
@@ -399,21 +412,27 @@ jobs:
           /usr/local/Homebrew
           ~/Library/Caches/pip
           ${{ steps.alpine-target.outputs.root-path }}/home/runner/deps/
-        key: ${{ matrix.target.name }}-v4-${{ hashFiles('*.a') }}
+        key: ${{ matrix.target.name }}-v4- # ${{ hashFiles('*.a') }}
     - name: Build Reindexer
-      run: |        
-        export CPLUS_INCLUDE_PATH=~/deps/grpc/third_party/abseil-cpp:~/deps/grpc/third_party/utf8_range
+      run: |
+        export CPLUS_INCLUDE_PATH=${CPLUS_INCLUDE_PATH}:~/deps/grpc/third_party/abseil-cpp
         export BUILD_DIR=${GITHUB_WORKSPACE}/build
         mkdir -p ${BUILD_DIR} && cd ${BUILD_DIR}
-        if [[ "$RUNNER_OS" == "Linux" ]]; then
+        echo "ARTIFACT_DIR=${BUILD_DIR}/cpp_src/server/cbinding" >> $GITHUB_ENV
+        if [[ "$OS" == "ubuntu" || "$OS" == "alpine" ]]; then
           (cmake ${{ env.REINDEXER_OPTS }} ${GITHUB_WORKSPACE} && make reindexer_embedded_server -j4) || cat ${BUILD_DIR}/CMakeFiles/CMakeError.log;
-          find ${BUILD_DIR}/cpp_src/server/cbinding \( -name "*.so" -or -name "*.dylib" \) -exec ldd '{}' ';' | true;
-        else
+        elif [[ "$OS" == "macos" ]]; then
           (cmake ${{ env.REINDEXER_OPTS }} ${GITHUB_WORKSPACE} -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl -DOPENSSL_LIBRARIES=/usr/local/opt/openssl/lib && make reindexer_embedded_server -j4) || cat ${BUILD_DIR}/CMakeFiles/CMakeError.log;
-          find ${BUILD_DIR}/cpp_src/server/cbinding \( -name "*.so" -or -name "*.dylib" \) -exec otool -L '{}' ';' | true;
-        fi   
-        
-        find ${BUILD_DIR}/cpp_src/server/cbinding \( -name "*.so" -or -name "*.dylib" \) | xargs du -h
+        fi
+      shell: shell.sh {0}
+    - name: Check Dependencies
+      run: |
+        find ${ARTIFACT_DIR} \( -name "*.so" -or -name "*.dylib" \) | xargs du -h
+        if [[ "$OS" == "ubuntu" || "$OS" == "alpine" ]]; then          
+          find ${ARTIFACT_DIR} \( -name "*.so" -or -name "*.dylib" \) -exec bash -c "ldd {}  || echo $history[1]" \;
+        elif [[ "$OS" == "macos" ]]; then
+          find ${ARTIFACT_DIR} \( -name "*.so" -or -name "*.dylib" \) -exec bash -c "otool -L {}  || echo $history[1]" \;
+        fi
       shell: shell.sh {0}
     - name: artifacts
       uses: actions/upload-artifact@v4

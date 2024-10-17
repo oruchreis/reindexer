@@ -351,9 +351,6 @@ void print_crash_query(std::ostream& sout) {
 #else
 namespace reindexer {
 namespace debug {
-static std::recursive_mutex g_mutex;
-static crash_query_reporter_t g_crash_query_reporter = [](std::ostream&) {};
-static backtrace_writer_t g_writer = [](std::string_view sv) { std::cerr << sv; };
 
 void backtrace_init() noexcept {}
 void set_minidump_path(const std::string&) { assert(false); }
