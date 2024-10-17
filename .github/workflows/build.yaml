@@ -93,6 +93,8 @@ jobs:
         $env:ZLIB_LIB_RELEASE="$($env:THIRDPARTY_HOME)\\lib\zlib.lib"
         $env:LZ4_INCLUDE="$($env:THIRDPARTY_HOME)\\include"
         $env:LZ4_LIB_RELEASE="$($env:THIRDPARTY_HOME)\\lib\lz4.lib"
+        $env:CPPTRACE_INCLUDE="$($env:THIRDPARTY_HOME)\\include"
+        $env:CPPTRACE_LIB_RELEASE="$($env:THIRDPARTY_HOME)\\lib\cpptrace.lib"
         $env:SNAPPY_INCLUDE="$($env:THIRDPARTY_HOME)\\include"
         $env:SNAPPY_LIB_RELEASE="$($env:THIRDPARTY_HOME)\\lib\snappy.lib"
         $env:JEMALLOC_INCLUDE="$($env:GITHUB_WORKSPACE)\\externals\\jemalloc\\include\\"
@@ -173,29 +175,14 @@ jobs:
       id: alpine-target
       with:
         arch: x86_64
-        branch: v3.20 # build-base
-        packages: >          
-          pkgconf          
+        branch: v3.20
+        packages: >
+          build-base
+          binutils
+          pkgconf
           sudo
           bash
-          clang
-          clang-dev
-          llvm
-          llvm-dev
-          llvm-static
-          lld
-          lldb
-          libc++
-          libc++-dev          
-          libunwind-static
-          libunwind-dev
-          clang-ccache
-          clang-dev
-          clang-headers
-          clang-static
-          clang-libs
-          clang-libclang
-          clang-extra-tools
+          autoconf automake libtool linux-headers  make gcc g++ musl-dev libunwind-dev grpc-dev protobuf-dev c-ares-dev patch
           alpine-sdk
           dpkg
           cmake
@@ -251,30 +238,9 @@ jobs:
         cat /etc/alpine-release
         echo "OPENSSL_STATIC=1" >> $GITHUB_ENV
         echo "PIP_BREAK_SYSTEM_PACKAGES=1" >> $GITHUB_ENV
-        echo 'SECTION_FLAGS=-ffunction-sections -fdata-sections -flto' >> $GITHUB_ENV
-        ln -sf /usr/bin/clang /usr/bin/cc
-        ln -sf /usr/bin/clang++ /usr/bin/c++
-        update-alternatives --install /usr/bin/cc cc /usr/bin/clang 10
-        update-alternatives --install /usr/bin/c++ c++ /usr/bin/clang++ 10        
-        update-alternatives --auto cc
-        update-alternatives --auto c++
-        update-alternatives --display cc
-        update-alternatives --display c++
-        echo "CC=/usr/bin/clang" >> $GITHUB_ENV
-        echo "CXX=/usr/bin/clang++" >> $GITHUB_ENV
-        echo "CMAKE_C_COMPILER=/usr/bin/cc" >> $GITHUB_ENV
-        echo "CMAKE_CXX_COMPILER=/usr/bin/c++" >> $GITHUB_ENV
-        echo "CMAKE_AR=/usr/bin/llvm-ar" >> $GITHUB_ENV
-        echo "CMAKE_AS=/usr/bin/llvm-as" >> $GITHUB_ENV
-        echo "CMAKE_NM=/usr/bin/llvm-nm" >> $GITHUB_ENV
-        echo "CMAKE_RANLIB=/usr/bin/llvm-ranlib" >> $GITHUB_ENV
-        echo "AR=/usr/bin/llvm-ar" >> $GITHUB_ENV
-        echo "AS=/usr/bin/llvm-as" >> $GITHUB_ENV
-        echo "NM=/usr/bin/llvm-nm" >> $GITHUB_ENV
-        echo "RANLIB=/usr/bin/llvm-ranlib" >> $GITHUB_ENV
-        echo "LDFLAGS=-fuse-ld=lld -Wl,--undefined-version" >> $GITHUB_ENV
-        echo "CXXFLAGS=-std=c++17" >> $GITHUB_ENV
-        cc --version && c++ --version && ar --version && nm --version && ranlib --version && ld --version && ld.lld --version && llvm-ar --version && llvm-as --version && llvm-nm --version && llvm-ranlib --version
+        echo 'SECTION_FLAGS=-ffunction-sections -fdata-sections -Wl,--gc-sections' >> $GITHUB_ENV # -rdynamic"
+        echo 'LIBUNWIND_LIB=/usr/lib/x86_64-linux-gnu/libunwind.a' >> $GITHUB_ENV
+        cc --version && c++ --version && ar --version && nm --version && ranlib --version && ld --version
       shell: shell.sh {0}
     - name: Setup Macos
       if: startsWith(matrix.target.name,'macos')
@@ -284,7 +250,8 @@ jobs:
         #echo 'LIBUNWIND_LIB=' >> $GITHUB_ENV
         echo "PIP_BREAK_SYSTEM_PACKAGES=1" >> $GITHUB_ENV
         brew update > /dev/null && brew install --force --overwrite gnu-sed flex gettext autoconf automake libtool cvs python pkg-config # openssl@1.1 re2
-        export PATH=${PATH}:/usr/local/opt/gettext/bin
+        echo "PATH=${PATH}:/usr/local/opt/gettext/bin" >> $GITHUB_ENV
+        echo "CXXFLAGS=-std=c++17" >> $GITHUB_ENV
         # brew link --force openssl@1.1
         # export PKG_CONFIG_PATH="/usr/local/opt/openssl@1.1/lib/pkgconfig"
         # pkg-config --modversion openssl
@@ -312,12 +279,15 @@ jobs:
         export CFLAGS="${CFLAGS} -g0 -Os -fPIC" # -fvisibility=hidden ${SECTION_FLAGS}"
         export CXXFLAGS="${CXXFLAGS} -g0 -Os -fPIC" # -fvisibility=hidden -fvisibility-inlines-hidden ${SECTION_FLAGS}"
         COMMON_MAKE_ARGS=(--no-print-directory -j4 CFLAGS="${CFLAGS}" CXXFLAGS="${CFLAGS}" PREFIX=/usr/local)
-        COMMON_CMAKE_ARGS=(-DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_BUILD_TYPE=MinSizeRel -DCMAKE_POSITION_INDEPENDENT_CODE=1 -DCMAKE_FIND_LIBRARY_SUFFIXES=".a" -DCMAKE_LINK_SEARCH_START_STATIC=1 -DCMAKE_LINK_SEARCH_END_STATIC=1)
+        COMMON_CMAKE_ARGS=(-DCMAKE_CXX_STANDARD=17 -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_BUILD_TYPE=MinSizeRel -DCMAKE_POSITION_INDEPENDENT_CODE=1 -DCMAKE_FIND_LIBRARY_SUFFIXES=".a" -DCMAKE_LINK_SEARCH_START_STATIC=1 -DCMAKE_LINK_SEARCH_END_STATIC=1)
         echo "::endgroup::"
         echo "::group::Google Test & Benchmark & PerfTools"
         if [[ ! -d "$HOME/deps/googletest/.git" ]]; then git clone https://github.com/google/googletest.git ~/deps/googletest --depth 1; fi && cd ~/deps/googletest && git pull && cmake -DBUILD_GMOCK=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-std=c++11" . && make -j4 && sudo make install VERBOSE=1
         if [[ ! -d "$HOME/deps/googlebench/.git" ]]; then git clone --branch v1.4.0 https://github.com/google/benchmark.git ~/deps/googlebench --depth 1; fi && cd ~/deps/googlebench && cmake -DBENCHMARK_ENABLE_TESTING=Off -DCMAKE_BUILD_TYPE=Release . && make -j4 && sudo make install VERBOSE=1
         if [[ ${ENABLE_TCMALLOC} -eq 1 ]]; then if [[ ! -d "$HOME/deps/gperftools/.git" ]]; then git clone --branch master https://github.com/gperftools/gperftools.git ~/deps/gperftools --depth 1 && cd ~/deps/gperftools && ./autogen.sh; fi && cd ~/deps/gperftools && git pull && ./configure --disable-shared --enable-static --enable-libunwind=${ENABLE_LIBUNWIND} --enable-frame-pointers CFLAGS="${CFLAGS}" CXXFLAGS="${CFLAGS}" && make "${COMMON_MAKE_ARGS[@]}" && sudo make install VERBOSE=1; else sudo rm -rf  /usr/local/lib/*tcmalloc.*; fi
+        echo "::endgroup::"
+        echo "::group::Abseil"
+        if [[ ! -d "$HOME/deps/abseil/.git" ]]; then git clone --branch master --recursive https://github.com/abseil/abseil-cpp.git ~/deps/abseil --depth 1 && mkdir -p ~/deps/abseil/build; fi && cd ~/deps/abseil/build && git pull && cmake -DABSL_BUILD_TESTING=OFF -DABSL_USE_GOOGLETEST_HEAD=OFF ${COMMON_CMAKE_ARGS[*]} .. && sudo cmake --build . --target install
         echo "::endgroup::"
         echo "::group::Zlib"
         if [[ ! -d "$HOME/deps/zlib/.git" ]]; then git clone --branch master https://github.com/madler/zlib.git ~/deps/zlib; fi && cd ~/deps/zlib && ./configure --static && make libz.a "${COMMON_MAKE_ARGS[@]}" && sudo make install libz.a VERBOSE=1 && sudo rm -rf /usr/local/lib/libz.so* /usr/local/lib/libz.dylib* 
@@ -366,6 +336,9 @@ jobs:
         echo "::endgroup::"
         echo "::group::RocksDb"
         if [[ ! -d "$HOME/deps/rocksdb/.git" ]]; then git clone --branch v9.7.2 --recursive https://github.com/facebook/rocksdb.git ~/deps/rocksdb --depth 1 && mkdir -p ~/deps/rocksdb/build; fi && cd ~/deps/rocksdb/build && git pull && cmake -DPORTABLE=1 -DWITH_MD_LIBRARY=0 -DROCKSDB_BUILD_SHARED=0 -DWITH_GFLAGS=0 -DWITH_JEMALLOC=${ENABLE_JEMALLOC} -DWITH_SNAPPY=1 -DWITH_LZ4=1 -DWITH_ZSTD=1 -DWITH_ZLIB=1 -DWITH_BZ2=1 -DWITH_BENCHMARK_TOOLS=0 -DWITH_TOOLS=0 -DWITH_CORE_TOOLS=0 -DWITH_TRACE_TOOLS=0 -DWITH_TESTS=0 -DUSE_RTTI=1 -DWITH_RUNTIME_DEBUG=0 -DWITH_JNI=0 -DFAIL_ON_WARNINGS=0 ${COMMON_CMAKE_ARGS[*]} .. && make -j4 && sudo make install VERBOSE=1
+        echo "::endgroup::"        
+        echo "::group::re2"
+        if [[ ! -d "$HOME/deps/re2/.git" ]]; then git clone --branch main https://github.com/google/re2.git ~/deps/re2; fi && cd ~/deps/re2 && make static "${COMMON_MAKE_ARGS[@]}" && sudo make static-install VERBOSE=1 && sudo rm -rf /usr/local/lib/libre2.so* /usr/local/lib/libre2.dylib* 
         echo "::endgroup::"
         echo "::group::Protobuf"
         if [[ ! -d "$HOME/deps/protobuf/.git" ]]; then git clone --branch v28.2 --recursive https://github.com/protocolbuffers/protobuf.git ~/deps/protobuf --depth 1 && mkdir -p ~/deps/protobuf/build; fi && cd ~/deps/protobuf/build && git pull && cmake -Dprotobuf_WITH_ZLIB=ON ${COMMON_CMAKE_ARGS[*]} .. && make -j4 && sudo make install VERBOSE=1
@@ -379,7 +352,7 @@ jobs:
           sudo cp ${GITHUB_WORKSPACE}/externals/dietlibc/libcompat.a /opt/diet/lib-x86_64/;
           echo "::endgroup::"
         fi        
-        for lib in z bz2 lz4 zstd lzma crc32c snappy unwind jemalloc leveldb rocksdb grpc ;do sudo du -h "/usr/local/lib/lib$lib.a" "/usr/lib/x86_64-linux-gnu/lib$lib.a" 2> /dev/null || true; done
+        for lib in absl* z bz2 lz4 zstd lzma crc32c snappy unwind jemalloc leveldb rocksdb re2 protobuf grpc ;do sudo du -h "/usr/local/lib/lib$lib.a" "/usr/lib/x86_64-linux-gnu/lib$lib.a" 2> /dev/null || true; done
         EOF
       shell: shell.sh {0}
     - name: Prepare Cache Key
@@ -402,7 +375,7 @@ jobs:
         key: ${{ matrix.target.name }}-v4-${{ hashFiles('*.a') }}
     - name: Build Reindexer
       run: |        
-        export CPLUS_INCLUDE_PATH=~/deps/grpc/third_party/abseil-cpp:~/deps/grpc/third_party/utf8_range
+        export CPLUS_INCLUDE_PATH=~/deps/abseil:~/deps/protobuf/third_party/utf8_range
         export BUILD_DIR=${GITHUB_WORKSPACE}/build
         mkdir -p ${BUILD_DIR} && cd ${BUILD_DIR}
         if [[ "$RUNNER_OS" == "Linux" ]]; then
