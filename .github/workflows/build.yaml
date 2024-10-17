@@ -173,29 +173,14 @@ jobs:
       id: alpine-target
       with:
         arch: x86_64
-        branch: v3.20 # build-base
-        packages: >          
-          pkgconf          
+        branch: v3.20
+        packages: >
+          build-base
+          binutils
+          pkgconf
           sudo
           bash
-          clang
-          clang-dev
-          llvm
-          llvm-dev
-          llvm-static
-          lld
-          lldb
-          libc++
-          libc++-dev          
-          libunwind-static
-          libunwind-dev
-          clang-ccache
-          clang-dev
-          clang-headers
-          clang-static
-          clang-libs
-          clang-libclang
-          clang-extra-tools
+          autoconf automake libtool linux-headers g++ make libunwind-dev grpc-dev protobuf-dev c-ares-dev patch
           alpine-sdk
           dpkg
           cmake
@@ -251,30 +236,9 @@ jobs:
         cat /etc/alpine-release
         echo "OPENSSL_STATIC=1" >> $GITHUB_ENV
         echo "PIP_BREAK_SYSTEM_PACKAGES=1" >> $GITHUB_ENV
-        echo 'SECTION_FLAGS=-ffunction-sections -fdata-sections -flto' >> $GITHUB_ENV
-        ln -sf /usr/bin/clang /usr/bin/cc
-        ln -sf /usr/bin/clang++ /usr/bin/c++
-        update-alternatives --install /usr/bin/cc cc /usr/bin/clang 10
-        update-alternatives --install /usr/bin/c++ c++ /usr/bin/clang++ 10        
-        update-alternatives --auto cc
-        update-alternatives --auto c++
-        update-alternatives --display cc
-        update-alternatives --display c++
-        echo "CC=/usr/bin/clang" >> $GITHUB_ENV
-        echo "CXX=/usr/bin/clang++" >> $GITHUB_ENV
-        echo "CMAKE_C_COMPILER=/usr/bin/cc" >> $GITHUB_ENV
-        echo "CMAKE_CXX_COMPILER=/usr/bin/c++" >> $GITHUB_ENV
-        echo "CMAKE_AR=/usr/bin/llvm-ar" >> $GITHUB_ENV
-        echo "CMAKE_AS=/usr/bin/llvm-as" >> $GITHUB_ENV
-        echo "CMAKE_NM=/usr/bin/llvm-nm" >> $GITHUB_ENV
-        echo "CMAKE_RANLIB=/usr/bin/llvm-ranlib" >> $GITHUB_ENV
-        echo "AR=/usr/bin/llvm-ar" >> $GITHUB_ENV
-        echo "AS=/usr/bin/llvm-as" >> $GITHUB_ENV
-        echo "NM=/usr/bin/llvm-nm" >> $GITHUB_ENV
-        echo "RANLIB=/usr/bin/llvm-ranlib" >> $GITHUB_ENV
-        echo "LDFLAGS=-fuse-ld=lld -Wl,--undefined-version" >> $GITHUB_ENV
-        echo "CXXFLAGS=-std=c++17" >> $GITHUB_ENV
-        cc --version && c++ --version && ar --version && nm --version && ranlib --version && ld --version && ld.lld --version && llvm-ar --version && llvm-as --version && llvm-nm --version && llvm-ranlib --version
+        echo 'SECTION_FLAGS=-ffunction-sections -fdata-sections -Wl,--gc-sections' >> $GITHUB_ENV # -rdynamic"
+        echo 'LIBUNWIND_LIB=/usr/lib/x86_64-linux-gnu/libunwind.a' >> $GITHUB_ENV
+        cc --version && c++ --version && ar --version && nm --version && ranlib --version && ld --version
       shell: shell.sh {0}
     - name: Setup Macos
       if: startsWith(matrix.target.name,'macos')
@@ -284,7 +248,8 @@ jobs:
         #echo 'LIBUNWIND_LIB=' >> $GITHUB_ENV
         echo "PIP_BREAK_SYSTEM_PACKAGES=1" >> $GITHUB_ENV
         brew update > /dev/null && brew install --force --overwrite gnu-sed flex gettext autoconf automake libtool cvs python pkg-config # openssl@1.1 re2
-        export PATH=${PATH}:/usr/local/opt/gettext/bin
+        echo "PATH=${PATH}:/usr/local/opt/gettext/bin" >> $GITHUB_ENV
+        echo "CXXFLAGS=-std=c++17" >> $GITHUB_ENV
         # brew link --force openssl@1.1
         # export PKG_CONFIG_PATH="/usr/local/opt/openssl@1.1/lib/pkgconfig"
         # pkg-config --modversion openssl
