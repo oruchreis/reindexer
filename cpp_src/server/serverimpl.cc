@@ -212,7 +212,7 @@ void ServerImpl::ReopenLogFiles() {
 
 std::string ServerImpl::GetCoreLogPath() const { return GetDirPath(config_.CoreLog); }
 
-#if defined(WITH_GRPC) && defined(REINDEX_WITH_LIBDL)
+#if defined(WITH_GRPC) && defined(REINDEX_WITH_LIBDL) && !defined(STATIC_GRPC_LIB)
 static void* tryToOpenGRPCLib(bool enabled) noexcept {
 #ifdef __APPLE__
 	return enabled ? dlopen("libreindexer_grpc_library.dylib", RTLD_NOW) : nullptr;
@@ -223,7 +223,7 @@ static void* tryToOpenGRPCLib(bool enabled) noexcept {
 #endif	// defined(WITH_GRPC) && defined(REINDEX_WITH_LIBDL)
 
 int ServerImpl::run() {
-#if defined(WITH_GRPC) && defined(REINDEX_WITH_LIBDL)
+#if defined(WITH_GRPC) && defined(REINDEX_WITH_LIBDL) && !defined(STATIC_GRPC_LIB)
 	void* hGRPCServiceLib = tryToOpenGRPCLib(config_.EnableGRPC);
 #endif	// defined(WITH_GRPC) && defined(REINDEX_WITH_LIBDL)
 
@@ -366,7 +366,7 @@ int ServerImpl::run() {
 #if defined(WITH_GRPC)
 		void* hGRPCService = nullptr;
 		if (config_.EnableGRPC) {
-#if REINDEX_WITH_LIBDL
+#if REINDEX_WITH_LIBDL && !defined(STATIC_GRPC_LIB)
 			if (hGRPCServiceLib) {
 				auto start_grpc = reinterpret_cast<p_start_reindexer_grpc>(dlsym(hGRPCServiceLib, "start_reindexer_grpc"));
 				hGRPCService = start_grpc(*dbMgr_, config_.TxIdleTimeout, loop_, config_.GRPCAddr);
@@ -440,7 +440,7 @@ int ServerImpl::run() {
 		logger_.info("HTTP Server shutdown completed.");
 #ifdef WITH_GRPC
 		if (config_.EnableGRPC) {
-#if REINDEX_WITH_LIBDL
+#if REINDEX_WITH_LIBDL && !defined(STATIC_GRPC_LIB)
 			if (hGRPCServiceLib) {
 				auto stop_grpc = reinterpret_cast<p_stop_reindexer_grpc>(dlsym(hGRPCServiceLib, "stop_reindexer_grpc"));
 				stop_grpc(hGRPCService);

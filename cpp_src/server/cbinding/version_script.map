@@ -7,8 +7,12 @@
     get_reindexer_instance;
     check_server_ready;
     reopen_log_files;
+
+    start_reindexer_grpc;
+    stop_reindexer_grpc;
     
     init_reindexer;
+    init_reindexer_with_config;
     destroy_reindexer;
     reindexer_connect;
     reindexer_ping;
@@ -34,14 +38,19 @@
     reindexer_select_query;
     reindexer_delete_query;
     reindexer_update_query;
+    reindexer_cptr2cjson;
+    reindexer_free_cjson;
     reindexer_free_buffer;
     reindexer_free_buffers;
     reindexer_commit;
+    reindexer_enum_meta;
     reindexer_put_meta;
     reindexer_get_meta;
+    reindexer_delete_meta;
     reindexer_cancel_context;
     reindexer_enable_logger;
     reindexer_disable_logger;
+    reindexer_init_locale;
     reindexer_malloc_free;
   local: *;
 };

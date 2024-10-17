@@ -59,6 +59,9 @@ endif()
 message(STATUS "'${TARGET}' Target Link Libs: ${REINDEXER_LIBRARIES}")
 target_link_libraries(${TARGET} PRIVATE ${REINDEXER_LIBRARIES})
 
+# In order to reduce the size of the shared library, we only specify the exported functions. If there is a new export, it should be added to version_script.map file. (oruchreis)
+# target_link_options(${TARGET} PUBLIC -Wl,-Bsymbolic -Wl,-Bsymbolic-functions -Wl,--version-script,${CMAKE_CURRENT_SOURCE_DIR}/version_script.map)
+
 if (WIN32)
   if (MSVC)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /SAFESEH:NO")
