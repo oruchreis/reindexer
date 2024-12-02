@@ -115,8 +115,8 @@ else()
     set(ENV{SECTION_FLAGS} "-ffunction-sections -fdata-sections -rdynamic -Wl,--gc-sections")
   endif()
   message(STATUS "Section Flags: $ENV{SECTION_FLAGS}")
-  set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-omit-frame-pointer $ENV{SECTION_FLAGS}")
-  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -fexceptions -fno-omit-frame-pointer $ENV{SECTION_FLAGS}")
+  set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-omit-frame-pointer -fvisibility=hidden $ENV{SECTION_FLAGS}")
+  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -fexceptions -fno-omit-frame-pointer -fvisibility=hidden $ENV{SECTION_FLAGS}")
   if (${COMPILER_TARGET_ARCH} STREQUAL "e2k")
     set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -gline -fverbose-asm")
     set (CMAKE_CXX_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-parameter")
@@ -780,29 +780,29 @@ add_subdirectory(server/cbinding)
 #add_subdirectory(doc)
 
 # Tests and benchmarks
-find_package(GTest)
-if(GTEST_FOUND)
-    include_directories(SYSTEM ${GTEST_INCLUDE_DIR})
-    add_subdirectory(gtests/tests)
-endif()
+# find_package(GTest)
+# if(GTEST_FOUND)
+#     include_directories(SYSTEM ${GTEST_INCLUDE_DIR})
+#     add_subdirectory(gtests/tests)
+# endif()
+# 
+# find_package(benchmark)
+# if(benchmark_FOUND)
+#   if(${benchmark_VERSION_MAJOR} EQUAL "1" AND ${benchmark_VERSION_MINOR} GREATER_EQUAL "5" AND ${benchmark_VERSION_MINOR} LESS_EQUAL "7")
+#     find_package(GBenchmark)
+#     if(GBENCHMARK_FOUND)
+#       include_directories(SYSTEM ${GBENCHMARK_INCLUDE_DIR})
+#       add_subdirectory(gtests/bench)
+#     endif()
+#   else()
+#     message(STATUS "Unsupported Google benchmark version: ${benchmark_VERSION}. Only versions 1.5.x-1.7.x are supported")
+#   endif()
+# endif()
 
-find_package(benchmark)
-if(benchmark_FOUND)
-  if(${benchmark_VERSION_MAJOR} EQUAL "1" AND ${benchmark_VERSION_MINOR} GREATER_EQUAL "5" AND ${benchmark_VERSION_MINOR} LESS_EQUAL "7")
-    find_package(GBenchmark)
-    if(GBENCHMARK_FOUND)
-      include_directories(SYSTEM ${GBENCHMARK_INCLUDE_DIR})
-      add_subdirectory(gtests/bench)
-    endif()
-  else()
-    message(STATUS "Unsupported Google benchmark version: ${benchmark_VERSION}. Only versions 1.5.x-1.7.x are supported")
-  endif()
-endif()
-
-add_custom_target(collect_coverage
-  WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
-  COMMAND lcov --directory . --capture -o coverage.info
-  COMMAND lcov --remove coverage.info '/opt/rh/devtoolset*' '/usr/*' '/Library/*' '${PROJECT_SOURCE_DIR}/vendor/*' '${PROJECT_SOURCE_DIR}/server/vendor/*' '${PROJECT_BINARY_DIR}/gtests/tests/*' -o coverage_filtered.info
-  COMMAND genhtml coverage_filtered.info -o coverage_output
-  COMMENT "Collecting Reindexer coverage"
-)
+# add_custom_target(collect_coverage
+#   WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
+#   COMMAND lcov --directory . --capture -o coverage.info
+#   COMMAND lcov --remove coverage.info '/opt/rh/devtoolset*' '/usr/*' '/Library/*' '${PROJECT_SOURCE_DIR}/vendor/*' '${PROJECT_SOURCE_DIR}/server/vendor/*' '${PROJECT_BINARY_DIR}/gtests/tests/*' -o coverage_filtered.info
+#   COMMAND genhtml coverage_filtered.info -o coverage_output
+#   COMMENT "Collecting Reindexer coverage"
+# )

@@ -20,6 +20,7 @@ jobs:
       VCPKG_BUILD_TYPE: release
       BUILD_TYPE: MinSizeRel
       ENABLE_GRPC: On
+      ENABLE_ROCKSDB: On
       WITH_LTO: On
       VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
     steps:
@@ -114,7 +115,7 @@ jobs:
         git describe --tags
         if (!(Test-Path -Path build)){ mkdir build }
         cd build            
-        cmake -G "Visual Studio 17 2022" -A "$($env:PLATFORM)" -DCMAKE_CXX_STANDARD=20 -DCMAKE_TOOLCHAIN_FILE="$($env:VCPKG_ROOT)/scripts/buildsystems/vcpkg.cmake" -DCMAKE_BUILD_TYPE="$($env:BUILD_TYPE)" -DVCPKG_TARGET_TRIPLET="$($env:VCPKG_TARGET_TRIPLET)" -DLINK_TYPE=Static -DENABLE_GRPC="$($env:ENABLE_GRPC)" -DWITH_LTO="$($env:WITH_LTO)" -DLINK_RESOURCES=On ..
+        cmake -G "Visual Studio 17 2022" -A "$($env:PLATFORM)" -DCMAKE_CXX_STANDARD=20 -DCMAKE_TOOLCHAIN_FILE="$($env:VCPKG_ROOT)/scripts/buildsystems/vcpkg.cmake" -DCMAKE_BUILD_TYPE="$($env:BUILD_TYPE)" -DVCPKG_TARGET_TRIPLET="$($env:VCPKG_TARGET_TRIPLET)" -DLINK_TYPE=Static -DENABLE_GRPC="$($env:ENABLE_GRPC)" -DWITH_LTO="$($env:WITH_LTO)" -DENABLE_ROCKSDB="$($env:ENABLE_ROCKSDB)" -DLINK_RESOURCES=On ..
         cmake --build . --config "$($env:BUILD_TYPE)"
     - name: Check Dependencies
       run: |
@@ -157,6 +158,7 @@ jobs:
       ENABLE_TCMALLOC: 0
       ENABLE_JEMALLOC: 0
       ENABLE_GRPC: 1
+      ENABLE_ROCKSDB: 1
       WITH_LTO: On
       WITH_PYTHON: 0
       WITH_DOXYGEN: 0 # set to 1 when doxy doc deploy is ready
@@ -290,7 +292,7 @@ jobs:
         else
           sudo pip3 install grpcio grpcio-tools
         fi;
-        export REINDEXER_OPTS="-DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DWITH_LTO=${WITH_LTO} -DENABLE_LIBUNWIND=${ENABLE_LIBUNWIND} -DENABLE_JEMALLOC=${ENABLE_JEMALLOC} -DENABLE_TCMALLOC=${ENABLE_TCMALLOC} -DENABLE_GRPC=${ENABLE_GRPC} -DWITH_PYTHON=${WITH_PYTHON} -DLINK_RESOURCES=On"
+        export REINDEXER_OPTS="-DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DWITH_LTO=${WITH_LTO} -DENABLE_LIBUNWIND=${ENABLE_LIBUNWIND} -DENABLE_JEMALLOC=${ENABLE_JEMALLOC} -DENABLE_TCMALLOC=${ENABLE_TCMALLOC} -DENABLE_GRPC=${ENABLE_GRPC} -DENABLE_ROCKSDB=${ENABLE_ROCKSDB} -DWITH_PYTHON=${WITH_PYTHON} -DLINK_RESOURCES=On"
         echo "REINDEXER_OPTS=$REINDEXER_OPTS" >> $GITHUB_ENV
       shell: shell.sh {0}
     - name: Build Static Dependencies
@@ -300,8 +302,8 @@ jobs:
         echo '::echo::off'
         echo "::group::Set Compiler Flags"
         git config --global --add safe.directory '*'
-        export CFLAGS="${CFLAGS} -g0 -Os -DNDEBUG -fPIC" # -fvisibility=hidden ${SECTION_FLAGS}"
-        export CXXFLAGS="${CXXFLAGS} -std=c++17 -g0 -Os -DNDEBUG -fPIC" # -fvisibility=hidden -fvisibility-inlines-hidden ${SECTION_FLAGS}"
+        export CFLAGS="${CFLAGS} -g0 -Os -DNDEBUG -fPIC -fvisibility=hidden ${SECTION_FLAGS}" # -fvisibility=hidden ${SECTION_FLAGS}"
+        export CXXFLAGS="${CXXFLAGS} -std=c++17 -g0 -Os -DNDEBUG -fPIC -fvisibility=hidden -fvisibility-inlines-hidden ${SECTION_FLAGS}" # -fvisibility=hidden -fvisibility-inlines-hidden ${SECTION_FLAGS}"
         COMMON_MAKE_ARGS=(--no-print-directory -j4 CFLAGS="${CFLAGS}" CXXFLAGS="${CXXFLAGS}" PREFIX=/usr/local)
         COMMON_CMAKE_ARGS=(${COMMON_CMAKE_ARGS} "-DCMAKE_C_FLAGS=${CFLAGS}" "-DCMAKE_CXX_FLAGS=${CXXFLAGS}" -DCMAKE_C_STANDARD=17 -DCMAKE_CXX_STANDARD=17 -DLLVM_CXX_STD=c++17 -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_BUILD_TYPE=MinSizeRel -DCMAKE_POSITION_INDEPENDENT_CODE=1 -DCMAKE_FIND_LIBRARY_SUFFIXES=\".a\" -DCMAKE_LINK_SEARCH_START_STATIC=1 -DCMAKE_LINK_SEARCH_END_STATIC=1)
         echo "::endgroup::"
