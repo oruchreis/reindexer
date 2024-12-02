@@ -14,9 +14,9 @@ set(TARGET reindexer_embedded_server)
 
 add_library(${TARGET} SHARED "library_init.cc" "server_c.cc" "../../core/cbinding/reindexer_c.cc")
 #There is a ice bug in gcc when enabled lto, so disabled: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=91288
-if(NOT APPLE AND NOT MUSL)
-    set_property(TARGET ${TARGET} PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
-endif()
+#if(NOT APPLE AND NOT MUSL)
+    #set_property(TARGET ${TARGET} PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+#endif()
 
 set_property(TARGET ${TARGET} PROPERTY POSITION_INDEPENDENT_CODE ON)
 list(APPEND REINDEXER_LIBRARIES reindexer_server_library)
@@ -28,14 +28,25 @@ if (ENABLE_GRPC)
     add_definitions(-DWITH_GRPC)
 endif()
 
+if (MSVC)     
+    set_target_properties(${TARGET} PROPERTIES LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/exports_msvc.def)
+    target_link_options(${TARGET} PRIVATE "/OPT:REF" "/OPT:ICF" "/LTCG" "/DEF:${CMAKE_CURRENT_SOURCE_DIR}/exports_msvc.def")
+    set_target_properties(${TARGET} PROPERTIES LINK_FLAGS "/DEF:${CMAKE_CURRENT_SOURCE_DIR}/exports_msvc.def")
+    set (CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} \"/DEF:${CMAKE_CURRENT_SOURCE_DIR}/exports_msvc.def\"")
+    set (CMAKE_LINK_DEF_FILE_FLAG "/DEF::${CMAKE_CURRENT_SOURCE_DIR}/exports_msvc.def")
+elseif (APPLE)
+    set_target_properties(${TARGET} PROPERTIES LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/exports_clang.list)
+    set_target_properties(${TARGET} PROPERTIES LINK_FLAGS "-exported_symbols_list ${CMAKE_CURRENT_SOURCE_DIR}/exports_clang.list")
+    target_compile_options(${TARGET} PRIVATE "-fvisibility=hidden")
+else()
+    set_target_properties(${TARGET} PROPERTIES LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/exports_gcc.map)
+    target_link_options(${TARGET} PRIVATE -Wl,-Bsymbolic -Wl,-Bsymbolic-functions -Wl,--exclude-libs,ALL -ffunction-sections -Wl,--gc-sections -Wl,--version-script,${CMAKE_CURRENT_SOURCE_DIR}/exports_gcc.map --verbose)
+    target_compile_options(${TARGET} PRIVATE "-fvisibility=hidden")
+endif()
+
 if (NOT MSVC 
     AND (ENABLE_TCMALLOC OR ENABLE_JEMALLOC)
-    ) # Extremely needed by malloc ovverrides on GCC
-    # if (EXISTS /opt/diet/lib-x86_64/libcompat.a)
-    #     list(APPEND REINDEXER_LIBRARIES
-    #         /opt/diet/lib-x86_64/libcompat.a
-    #     )
-    # endif()
+    )
     target_link_libraries(${TARGET} PRIVATE 
       ${REINDEXER_LIBRARIES}       
       # -Bstatic -lstdc++ -Bdynamic
@@ -48,7 +59,7 @@ if (NOT MSVC
         set(CMAKE_SHARED_LINKER_FLAGS "-static-libgcc -static-libstdc++")
         target_link_options(${TARGET} PRIVATE 
         -Wl,-Bsymbolic -Wl,-Bsymbolic-functions
-        -Wl,--version-script,${CMAKE_CURRENT_SOURCE_DIR}/version_script.map 
+        -Wl,--version-script,${CMAKE_CURRENT_SOURCE_DIR}/exports_gcc.map 
         -Wno-error -Wno-uninitialized -Wno-maybe-uninitialized #for -flto
         -static-libgcc
         -static-libstdc++ 
