@@ -1,5 +1,13 @@
 cmake_minimum_required(VERSION 3.18)
 
+option(REINDEXER_BUILD_EMBEDDED_SERVER "Build ReindexerNet embedded native shared library" OFF)
+option(REINDEXER_EMBEDDED_STATIC_DEPS "Prefer static third-party dependencies for the embedded native shared library" ${REINDEXER_BUILD_EMBEDDED_SERVER})
+
+if(REINDEXER_EMBEDDED_STATIC_DEPS AND WIN32)
+  cmake_policy(SET CMP0091 NEW)
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
 project(reindexer)
 
 enable_testing()

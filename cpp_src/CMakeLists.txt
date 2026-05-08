@@ -9,6 +9,16 @@ include(ProcessorCount)
 
 set(CMAKE_DISABLE_IN_SOURCE_BUILD ON)
 
+option(REINDEXER_BUILD_EMBEDDED_SERVER "Build ReindexerNet embedded native shared library" OFF)
+option(REINDEXER_EMBEDDED_STATIC_DEPS "Prefer static third-party dependencies for the embedded native shared library" ${REINDEXER_BUILD_EMBEDDED_SERVER})
+
+if(REINDEXER_EMBEDDED_STATIC_DEPS)
+  cmake_policy(SET CMP0063 NEW)
+  set(CMAKE_POLICY_DEFAULT_CMP0063 NEW)
+  set(CMAKE_CXX_VISIBILITY_PRESET hidden)
+  set(CMAKE_VISIBILITY_INLINES_HIDDEN 1)
+endif()
+
 option(WITH_ASAN "Enable AddressSanitized build" OFF)
 option(WITH_TSAN "Enable ThreadSanitized build" OFF)
 option(WITH_GCOV "Enable instrumented code coverage build" OFF)
@@ -29,9 +39,15 @@ option(ENABLE_SSE "Enable SSE instructions" ON)
 option(ENABLE_SERVER_AS_PROCESS_IN_TEST "Run reindexer servers as separate processes in tests" OFF)
 option(ENABLE_EXTRA_CLUSTER_LOGS "Enable extra logging related to RAFT-cluster" OFF)
 option(ENABLE_PCH "Enable precompiled headers for the build" OFF)
+option(REINDEXER_BUILD_TESTS_AND_BENCHMARKS "Build Reindexer tests and benchmarks" ON)
 option(WITH_BUILTIN_LEVELDB "Use builtin leveldb instead of system package" OFF)
+option(WITH_FRISO_DICT "Embed Chinese (CJK) tokenizer dictionary resources into the binary" ON)
 set(BUILD_ANN_INDEXES "all" CACHE STRING "Enable ANN indexes build: none, builtin, all. 'All' builds both builtin and FAISS-based indexes")
 set_property(CACHE BUILD_ANN_INDEXES PROPERTY STRINGS none builtin all)
+
+if(REINDEXER_BUILD_EMBEDDED_SERVER AND ENABLE_GRPC)
+  add_definitions(-DSTATIC_GRPC_LIB=1)
+endif()
 
 if(APPLE)
   option(ENABLE_OPENSSL "Enable OpenSSL" OFF)
@@ -84,10 +100,19 @@ target_architecture(COMPILER_TARGET_ARCH)
 
 # Configure compile options
 if(MSVC)
-  set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -Zi")
-  set(CMAKE_C_FLAGS_RELWITHDEBINFO "-O2 -Zi")
-  set(CMAKE_CXX_FLAGS_RELEASE "-O2 -DNDEBUG -Zi")
-  set(CMAKE_C_FLAGS_RELEASE "-O2 -DNDEBUG -Zi")
+  if(REINDEXER_EMBEDDED_STATIC_DEPS)
+    set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -Zi /MT")
+    set(CMAKE_C_FLAGS_RELWITHDEBINFO "-O2 -Zi /MT")
+    set(CMAKE_CXX_FLAGS_RELEASE "-O2 -DNDEBUG -Zi /MT")
+    set(CMAKE_C_FLAGS_RELEASE "-O2 -DNDEBUG -Zi /MT")
+    set(CMAKE_CXX_FLAGS_MINSIZEREL "-O2 -DNDEBUG -Zi /MT")
+    set(CMAKE_C_FLAGS_MINSIZEREL "-O2 -DNDEBUG -Zi /MT")
+  else()
+    set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -Zi")
+    set(CMAKE_C_FLAGS_RELWITHDEBINFO "-O2 -Zi")
+    set(CMAKE_CXX_FLAGS_RELEASE "-O2 -DNDEBUG -Zi")
+    set(CMAKE_C_FLAGS_RELEASE "-O2 -DNDEBUG -Zi")
+  endif()
 elseif(WITH_ASAN)
   # Using O2 instead of O3 to build a bit faster
   # Also this allows to avoid SEGFAULT in libasan.so during coroutines interaction on CentOS7 (gcc-12).
@@ -121,12 +146,26 @@ if(NOT MSVC AND NOT APPLE)
 endif()
 
 if(MSVC)
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -wd4244 -wd4267 -wd4996 -wd4717 -MP -MD")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -wd4244 -wd4267 -wd4996 -wd4717 -wd4800 -wd4396 -wd4503 -MP -MD /bigobj")
+  if(REINDEXER_EMBEDDED_STATIC_DEPS)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -wd4244 -wd4267 -wd4996 -wd4717 -MP -MT")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -wd4244 -wd4267 -wd4996 -wd4717 -wd4800 -wd4396 -wd4503 -MP -MT /bigobj")
+  else()
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -wd4244 -wd4267 -wd4996 -wd4717 -MP -MD")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -wd4244 -wd4267 -wd4996 -wd4717 -wd4800 -wd4396 -wd4503 -MP -MD /bigobj")
+  endif()
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -SAFESEH:NO")
 else()
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Wfloat-equal -Werror -Wswitch-enum -Winvalid-pch")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++20 -Wall -Wextra -Wfloat-equal -Werror -Wswitch-enum -Wold-style-cast -Winvalid-pch -fexceptions")
+  if(REINDEXER_EMBEDDED_STATIC_DEPS)
+    if(DEFINED ENV{SECTION_COMPILE_FLAGS})
+      set(REINDEXER_SECTION_COMPILE_FLAGS "$ENV{SECTION_COMPILE_FLAGS}")
+    else()
+      set(REINDEXER_SECTION_COMPILE_FLAGS "-ffunction-sections -fdata-sections")
+    endif()
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fvisibility=hidden -fno-omit-frame-pointer ${REINDEXER_SECTION_COMPILE_FLAGS} -Wno-error")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fvisibility=hidden -fvisibility-inlines-hidden -fno-omit-frame-pointer ${REINDEXER_SECTION_COMPILE_FLAGS} -Wno-error")
+  endif()
   if(CLANG)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wthread-safety -Wthread-safety-beta")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wthread-safety -Wthread-safety-beta")
@@ -369,6 +408,9 @@ endif()
 
 list(APPEND REINDEXER_LIBRARIES reindexer)
 add_library(${TARGET}_obj OBJECT ${SRCS})
+if(MSVC AND REINDEXER_EMBEDDED_STATIC_DEPS)
+  set_property(TARGET ${TARGET}_obj PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
 
 if(ENABLE_PCH)
   set(PREC_HDRS
@@ -532,7 +574,7 @@ target_link_libraries(${TARGET} PUBLIC ${OBJ_LIBRARIES})
 #########
 # rocksdb
 if(ENABLE_ROCKSDB)
-  if(GPERFTOOLS_TCMALLOC AND NOT WIN32)
+  if((GPERFTOOLS_TCMALLOC OR REINDEXER_EMBEDDED_STATIC_DEPS) AND NOT WIN32)
     # shared version of rocksdb can conflict with tcmalloc, so force static version of rocksdb, if tcmalloc enabled
     set(RocksDB_NAMES librocksdb.a)
   endif()
@@ -540,7 +582,11 @@ if(ENABLE_ROCKSDB)
   find_path(RocksDB_INCLUDE_DIR NAMES rocksdb/db.h HINTS $ENV{ROCKSDB_ROOT}/include /opt/local/include /usr/local/include /usr/include)
   if(RocksDB_LIBRARY AND RocksDB_INCLUDE_DIR)
     message(STATUS "Found RocksDB: ${RocksDB_LIBRARY}")
-    find_library(BZ2_LIBRARY bz2 bzip2)
+    if(REINDEXER_EMBEDDED_STATIC_DEPS AND NOT WIN32)
+      find_library(BZ2_LIBRARY NAMES libbz2.a bz2 bzip2)
+    else()
+      find_library(BZ2_LIBRARY bz2 bzip2)
+    endif()
     if(BZ2_LIBRARY)
       message(STATUS "Found libbz2: ${BZ2_LIBRARY}")
       list(APPEND REINDEXER_LIBRARIES ${BZ2_LIBRARY})
@@ -548,7 +594,11 @@ if(ENABLE_ROCKSDB)
       message(STATUS "libbz2: not found")
     endif()
 
-    find_library(LZ4_LIBRARY lz4)
+    if(REINDEXER_EMBEDDED_STATIC_DEPS AND NOT WIN32)
+      find_library(LZ4_LIBRARY NAMES liblz4.a lz4)
+    else()
+      find_library(LZ4_LIBRARY lz4)
+    endif()
     if(LZ4_LIBRARY)
       message(STATUS "Found liblz4: ${LZ4_LIBRARY}")
       list(APPEND REINDEXER_LIBRARIES ${LZ4_LIBRARY})
@@ -556,7 +606,11 @@ if(ENABLE_ROCKSDB)
       message(STATUS "liblz4: not found")
     endif()
 
-    find_library(Z_LIBRARY z)
+    if(REINDEXER_EMBEDDED_STATIC_DEPS AND NOT WIN32)
+      find_library(Z_LIBRARY NAMES libz.a z)
+    else()
+      find_library(Z_LIBRARY z)
+    endif()
     if(Z_LIBRARY)
       message(STATUS "Found zlib: ${Z_LIBRARY}")
       list(APPEND REINDEXER_LIBRARIES ${Z_LIBRARY})
@@ -564,7 +618,11 @@ if(ENABLE_ROCKSDB)
       message(STATUS "zlib: not found")
     endif()
 
-    find_library(ZSTD_LIBRARY zstd)
+    if(REINDEXER_EMBEDDED_STATIC_DEPS AND NOT WIN32)
+      find_library(ZSTD_LIBRARY NAMES libzstd.a zstd)
+    else()
+      find_library(ZSTD_LIBRARY zstd)
+    endif()
     if(ZSTD_LIBRARY)
       message(STATUS "Found zstdlib: ${ZSTD_LIBRARY}")
       list(APPEND REINDEXER_LIBRARIES ${ZSTD_LIBRARY})
@@ -579,7 +637,7 @@ if(ENABLE_ROCKSDB)
 endif()
 
 # leveldb
-if(GPERFTOOLS_TCMALLOC AND NOT WIN32)
+if((GPERFTOOLS_TCMALLOC OR REINDEXER_EMBEDDED_STATIC_DEPS) AND NOT WIN32)
   # shared version of leveldb can conflict with tcmalloc, so force static version of leveldb, if tcmalloc enabled
   set(LevelDB_NAMES libleveldb.a)
 endif()
@@ -648,26 +706,56 @@ list(APPEND REINDEXER_LIBRARIES ${CMAKE_THREAD_LIBS_INIT} )
 
 include(CMakeRC)
 
-file(GLOB CHINA_DICT LIST_DIRECTORIES false ${REINDEXER_SOURCE_PATH}/resource/china_dict/*.lex)
-cmrc_add_resource_library(friso_dict_resources WHENCE ${REINDEXER_SOURCE_PATH}/resource ${CHINA_DICT})
-list(APPEND REINDEXER_LIBRARIES friso_dict_resources)
-add_dependencies(${TARGET} friso_dict_resources)
+if(WITH_FRISO_DICT)
+  file(GLOB CHINA_DICT LIST_DIRECTORIES false ${REINDEXER_SOURCE_PATH}/resource/china_dict/*.lex)
+  cmrc_add_resource_library(friso_dict_resources WHENCE ${REINDEXER_SOURCE_PATH}/resource ${CHINA_DICT})
+  list(APPEND REINDEXER_LIBRARIES friso_dict_resources)
+  add_dependencies(${TARGET} friso_dict_resources)
+else()
+  # frisosplitter.cc is compiled as part of the reindexer_obj OBJECT library,
+  # so the definition must be applied there; applying it to ${TARGET} alone
+  # has no effect on object compilation.
+  target_compile_definitions(${TARGET}_obj PRIVATE RX_WITHOUT_FRISO_DICT)
+  target_compile_definitions(${TARGET} PRIVATE RX_WITHOUT_FRISO_DICT)
+endif()
 
 if(WITH_CPPTRACE)
-  ExternalProject_Add(
-    cpptrace_lib
-    GIT_REPOSITORY "https://github.com/jeremy-rifkin/cpptrace.git"
-    GIT_TAG "v0.3.1"
-    CMAKE_ARGS -DCMAKE_INSTALL_LIBDIR=${CMAKE_CURRENT_BINARY_DIR}
+  set(CPPTRACE_CMAKE_ARGS
+      -DCMAKE_INSTALL_LIBDIR=${CMAKE_CURRENT_BINARY_DIR}
       -DCMAKE_INSTALL_PREFIX=${CMAKE_CURRENT_BINARY_DIR}
       -DCPPTRACE_BUILD_SHARED=Off
       -DCPPTRACE_GET_SYMBOLS_WITH_DBGHELP=On
       -DCPPTRACE_UNWIND_WITH_DBGHELP=On
       -DCPPTRACE_DEMANGLE_WITH_WINAPI=On
+      -DBUILD_TESTING=OFF)
+  if(REINDEXER_EMBEDDED_STATIC_DEPS AND MSVC)
+    # cpptrace v0.3.1 uses an old cmake_minimum_required, so CMP0091 defaults
+    # to OLD inside its configure step.  With CMP0091 OLD, CMAKE_MSVC_RUNTIME_LIBRARY
+    # has no effect — the runtime is controlled by per-config compiler flags that
+    # cmake injects as /MD.  Forcing CMAKE_POLICY_DEFAULT_CMP0091=NEW makes cmake
+    # honour CMAKE_MSVC_RUNTIME_LIBRARY even when the project hasn't opted in.
+    list(APPEND CPPTRACE_CMAKE_ARGS
+      "-DCMAKE_POLICY_DEFAULT_CMP0091=NEW"
+      "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded"
+    )
+  endif()
+  ExternalProject_Add(
+    cpptrace_lib
+    GIT_REPOSITORY "https://github.com/jeremy-rifkin/cpptrace.git"
+    GIT_TAG "v0.3.1"
+    CMAKE_ARGS ${CPPTRACE_CMAKE_ARGS}
   )
+  include_directories(${CMAKE_CURRENT_BINARY_DIR}/include)
+  link_directories(${CMAKE_CURRENT_BINARY_DIR})
+  list(APPEND REINDEXER_LINK_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR})
   add_definitions(-DREINDEX_WITH_CPPTRACE)
   add_dependencies(${TARGET}_obj cpptrace_lib)
-  list(APPEND REINDEXER_LIBRARIES cpptrace ${REINDEXER_LIBRARIES})
+  if(MSVC)
+    set(CPPTRACE_LIBRARY "${CMAKE_CURRENT_BINARY_DIR}/cpptrace.lib")
+  else()
+    set(CPPTRACE_LIBRARY cpptrace)
+  endif()
+  list(APPEND REINDEXER_LIBRARIES ${CPPTRACE_LIBRARY} ${REINDEXER_LIBRARIES})
 endif()
 
 # librt
@@ -697,7 +785,11 @@ endif()
 
 # libunwind
 if(ENABLE_LIBUNWIND)
-  find_library(LIBUNWIND unwind)
+  if(REINDEXER_EMBEDDED_STATIC_DEPS AND NOT WIN32)
+    find_library(LIBUNWIND NAMES libunwind.a unwind)
+  else()
+    find_library(LIBUNWIND unwind)
+  endif()
   if(LIBUNWIND)
     list(APPEND REINDEXER_LIBRARIES ${LIBUNWIND} )
     find_path(LIBUNWIND_INCLUDE_PATH libunwind.h)
@@ -734,7 +826,9 @@ if(APPLE)
 endif()
 
 if(WIN32)
-  list(APPEND REINDEXER_LIBRARIES shlwapi dbghelp ws2_32)
+  # Rpcrt4 provides UUID functions (UuidCreateSequential, UuidToStringA, etc.)
+  # required by RocksDB port_win.cpp when linked statically.
+  list(APPEND REINDEXER_LIBRARIES shlwapi dbghelp ws2_32 Rpcrt4)
 endif()
 
 if (MSVC)
@@ -786,27 +880,32 @@ include (RxPrepareInstallFiles)
 
 # Build subdirectories
 add_subdirectory(server)
+if(REINDEXER_BUILD_EMBEDDED_SERVER)
+  add_subdirectory(server/cbinding)
+endif()
 add_subdirectory(cmd/reindexer_tool)
 add_subdirectory(cmd/reindexer_server)
 add_subdirectory(doc)
 
 # Tests and benchmarks
-find_package(GTest)
-if(GTEST_FOUND)
-    add_definitions(-DRX_SRC="${REINDEXER_SOURCE_PATH}")
-    add_subdirectory(gtests/tests)
-endif()
+if(REINDEXER_BUILD_TESTS_AND_BENCHMARKS)
+  find_package(GTest)
+  if(GTEST_FOUND)
+      add_definitions(-DRX_SRC="${REINDEXER_SOURCE_PATH}")
+      add_subdirectory(gtests/tests)
+  endif()
 
-find_package(benchmark)
-if(benchmark_FOUND)
-  if(${benchmark_VERSION_MAJOR} EQUAL "1" AND ${benchmark_VERSION_MINOR} GREATER_EQUAL "9" AND ${benchmark_VERSION_PATCH} GREATER_EQUAL "5")
-    find_package(GBenchmark)
-    if(GBENCHMARK_FOUND)
-      include_directories(SYSTEM ${GBENCHMARK_INCLUDE_DIR})
-      add_subdirectory(gtests/bench)
+  find_package(benchmark)
+  if(benchmark_FOUND)
+    if(${benchmark_VERSION_MAJOR} EQUAL "1" AND ${benchmark_VERSION_MINOR} GREATER_EQUAL "9" AND ${benchmark_VERSION_PATCH} GREATER_EQUAL "5")
+      find_package(GBenchmark)
+      if(GBENCHMARK_FOUND)
+        include_directories(SYSTEM ${GBENCHMARK_INCLUDE_DIR})
+        add_subdirectory(gtests/bench)
+      endif()
+    else()
+      message(STATUS "Unsupported Google benchmark version: ${benchmark_VERSION}. Version 1.9.5 or newer is required")
     endif()
-  else()
-    message(STATUS "Unsupported Google benchmark version: ${benchmark_VERSION}. Version 1.9.5 or newer is required")
   endif()
 endif()
 

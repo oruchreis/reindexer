@@ -1,6 +1,7 @@
 name: build
 
-on: push
+on:
+  workflow_dispatch:
 jobs:
   build-windows-latest:
     runs-on: windows-latest
@@ -15,9 +16,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
       - name: Install NSIS
-        uses: repolevedavaj/install-nsis@v1.1.0
-        with:
-          nsis-version: '3.11'
+        shell: pwsh
+        run: |
+          choco install nsis -y --no-progress
+          $nsisPath = "${env:ProgramFiles(x86)}\NSIS"
+          if (Test-Path $nsisPath) {
+            Add-Content $env:GITHUB_PATH $nsisPath
+          }
       - name: Build Reindexer
         run: |
           mkdir build && cd build
@@ -54,6 +59,7 @@ jobs:
             sudo ./dependencies.sh
             ./.github/workflows/install_grpc.sh
             ./.github/workflows/install_gbench.sh
+            python3 -m pip install --user grpcio grpcio-tools || python3 -m pip install --user --break-system-packages grpcio grpcio-tools
           else
             ./dependencies.sh
           fi

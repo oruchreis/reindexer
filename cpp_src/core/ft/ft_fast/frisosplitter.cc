@@ -19,18 +19,26 @@
 
 #include "frisosplitter.h"
 #include <sstream>
+#ifndef RX_WITHOUT_FRISO_DICT
 #include "../_cmrc/include/cmrc/cmrc.hpp"
+#endif
 #include "frisochartypes.h"
 #include "tools/stringstools.h"
 #include "vendor/utf8cpp/utf8/unchecked.h"
 
+#ifndef RX_WITHOUT_FRISO_DICT
 static void initResources() { CMRC_INIT(friso_dict_resources); }
+#endif
 
 namespace reindexer {
 
 Dictionary::Dictionary() {
+#ifndef RX_WITHOUT_FRISO_DICT
 	initResources();
 	loadDictFromFiles();
+#endif
+	// When built without the embedded Chinese dictionary (RX_WITHOUT_FRISO_DICT),
+	// all DictTable members stay empty and CJK tokens are treated as unknown words.
 }
 
 const Dictionary::DictTable& Dictionary::operator[](unsigned indx) const {
@@ -79,6 +87,7 @@ void Dictionary::parseDictPart(WordInf& rec, int counter, const std::string& dat
 }
 
 void Dictionary::loadOneFile(const LexFileInfo& fInf, DictTable& loadDict) {
+#ifndef RX_WITHOUT_FRISO_DICT
 	auto dictRes = cmrc::open(fInf.name);
 	if (dictRes.begin() == nullptr) {
 		throw reindexer::Error(errLogic, "Incorrect friso dictionary resource.");
@@ -102,9 +111,14 @@ void Dictionary::loadOneFile(const LexFileInfo& fInf, DictTable& loadDict) {
 		parseDictPart(dictRecord, counter, line.substr(posStart));
 		loadDict.insert(dictRecord);
 	}
+#else
+	(void)fInf;
+	(void)loadDict;
+#endif
 }
 
 void Dictionary::loadDictFromFiles() {
+#ifndef RX_WITHOUT_FRISO_DICT
 	const std::vector<LexFileInfo> fileInfos = {
 		{__LEX_CJK_WORDS__, "china_dict/lex-main.lex"},		{__LEX_CJK_WORDS__, "china_dict/lex-admin.lex"},
 		{__LEX_CJK_WORDS__, "china_dict/lex-chars.lex"},	{__LEX_CJK_WORDS__, "china_dict/lex-cn-mz.lex"},
@@ -123,6 +137,7 @@ void Dictionary::loadDictFromFiles() {
 	for (auto& fInfo : fileInfos) {
 		loadOneFile(fInfo, dict_[fInfo.type]);
 	}
+#endif
 }
 
 std::pair<int, int> FrisoTask::Convert(unsigned int startWord, unsigned int endWord) {

@@ -1,4 +1,8 @@
 #include "reindexerservice.h"
+#if _MSC_VER && !__INTEL_COMPILER
+#undef DELETE
+#endif
+#include "grpcexport.h"
 
 #include "core/cjson/jsonbuilder.h"
 #include "core/cjson/msgpackbuilder.h"

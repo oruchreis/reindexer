@@ -1,5 +1,7 @@
 .idea/
 .vscode/ipch
+.vs/
+.vs/**
 .cursor/
 reindexer.cbp
 reindexer.iml

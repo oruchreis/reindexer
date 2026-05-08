@@ -25,9 +25,15 @@ int MkDirAll(const std::string& path) noexcept {
 			if (*p == '/' || *p == '\\') {
 				*p = 0;
 				err = mkdir(tmp, S_IRWXU);
+#ifndef _WIN32
 				if ((err < 0) && (errno != EEXIST)) {
 					return err;
 				}
+#else
+				// On Windows, intermediate mkdir can fail for drive/UNC roots or ACL-protected parent paths.
+				// Keep walking the path and let the final mkdir decide whether the target can be created.
+				(void)err;
+#endif
 				*p = '/';
 			}
 		}

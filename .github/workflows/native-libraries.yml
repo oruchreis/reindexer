@@ -1,0 +1,818 @@
+name: Native Libraries
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [v5]
+  pull_request:
+    branches: [v5]
+
+env:
+  BUILD_TYPE: MinSizeRel
+  ROCKSDB_VERSION: v9.7.2
+  # Bump CACHE_VERSION when dependency lists or build flags change.
+  # Editing this workflow file alone does NOT require a bump.
+  CACHE_VERSION: "1"
+  CMAKE_COMMON_ARGS: >-
+    -DREINDEXER_BUILD_EMBEDDED_SERVER=ON
+    -DREINDEXER_EMBEDDED_STATIC_DEPS=ON
+    -DWITH_LTO=ON
+    -DENABLE_TCMALLOC=OFF
+    -DENABLE_JEMALLOC=OFF
+    -DENABLE_LIBUNWIND=OFF
+    -DREINDEXER_BUILD_TESTS_AND_BENCHMARKS=OFF
+
+jobs:
+  windows:
+    name: Windows ${{ matrix.platform }} (${{ matrix.flavor }})
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: x64
+            flavor: min
+            triplet: rx-x64-windows-static-release
+            host_triplet: rx-x64-windows-static-release
+          - platform: x64
+            flavor: full
+            triplet: rx-x64-windows-static-release
+            host_triplet: rx-x64-windows-static-release
+          - platform: Win32
+            flavor: min
+            triplet: rx-x86-windows-static-release
+            host_triplet: rx-x64-windows-static-release
+          - platform: Win32
+            flavor: full
+            triplet: rx-x86-windows-static-release
+            host_triplet: rx-x64-windows-static-release
+    env:
+      RX_VCPKG_ROOT: ${{ github.workspace }}\.vcpkg
+      RX_VCPKG_TRIPLET_DIR: ${{ github.workspace }}\.vcpkg-triplets
+      VCPKG_ROOT: ${{ github.workspace }}\.vcpkg
+      VCPKG_BINARY_SOURCES: clear
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 100
+
+      - name: Fetch tags
+        shell: pwsh
+        run: git fetch --depth=100 origin +refs/tags/*:refs/tags/*
+
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: latest
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Setup Python packages
+        shell: pwsh
+        run: |
+          python -m venv "$env:RUNNER_TEMP\reindexer-python"
+          & "$env:RUNNER_TEMP\reindexer-python\Scripts\python.exe" -m pip install --upgrade pip
+          if ("${{ matrix.flavor }}" -eq "full") {
+            & "$env:RUNNER_TEMP\reindexer-python\Scripts\python.exe" -m pip install grpcio grpcio-tools pyyaml
+          }
+          Add-Content $env:GITHUB_PATH "$env:RUNNER_TEMP\reindexer-python\Scripts"
+          Add-Content $env:GITHUB_ENV "PYTHON3=$env:RUNNER_TEMP\reindexer-python\Scripts\python.exe"
+
+      - name: Cache vcpkg packages
+        uses: actions/cache@v4
+        id: cache-vcpkg
+        with:
+          path: ${{ github.workspace }}/.vcpkg/installed
+          key: vcpkg-${{ runner.os }}-${{ matrix.triplet }}-${{ matrix.flavor }}-v${{ env.CACHE_VERSION }}
+
+      - name: Bootstrap vcpkg
+        shell: pwsh
+        run: |
+          $env:VCPKG_ROOT = $env:RX_VCPKG_ROOT
+          if (!(Test-Path "$env:RX_VCPKG_ROOT\.git")) {
+            $installedSrc = Join-Path $env:RX_VCPKG_ROOT "installed"
+            $installedCache = Join-Path $env:RUNNER_TEMP "vcpkg-installed-cache"
+            if (Test-Path $installedSrc) {
+              Move-Item $installedSrc $installedCache
+            }
+            if (Test-Path "$env:RX_VCPKG_ROOT") {
+              Remove-Item -LiteralPath "$env:RX_VCPKG_ROOT" -Recurse -Force
+            }
+            git clone https://github.com/microsoft/vcpkg.git "$env:RX_VCPKG_ROOT" --depth 1
+            if (Test-Path $installedCache) {
+              Move-Item $installedCache $installedSrc
+            }
+          } else {
+            cd "$env:RX_VCPKG_ROOT"
+            git pull --ff-only
+          }
+          New-Item -ItemType Directory -Force -Path "$env:RX_VCPKG_TRIPLET_DIR"
+          @'
+          set(VCPKG_TARGET_ARCHITECTURE x64)
+          set(VCPKG_CRT_LINKAGE static)
+          set(VCPKG_LIBRARY_LINKAGE static)
+          set(VCPKG_BUILD_TYPE release)
+          '@ | Set-Content -Path "$env:RX_VCPKG_TRIPLET_DIR\rx-x64-windows-static-release.cmake"
+          @'
+          set(VCPKG_TARGET_ARCHITECTURE x86)
+          set(VCPKG_CRT_LINKAGE static)
+          set(VCPKG_LIBRARY_LINKAGE static)
+          set(VCPKG_BUILD_TYPE release)
+          '@ | Set-Content -Path "$env:RX_VCPKG_TRIPLET_DIR\rx-x86-windows-static-release.cmake"
+          cd "$env:RX_VCPKG_ROOT"
+          .\bootstrap-vcpkg.bat
+          Add-Content $env:GITHUB_ENV "VCPKG_ROOT=$env:RX_VCPKG_ROOT"
+          Add-Content $env:GITHUB_ENV "VCPKG_DEFAULT_TRIPLET=${{ matrix.triplet }}"
+          Add-Content $env:GITHUB_ENV "VCPKG_DEFAULT_HOST_TRIPLET=${{ matrix.host_triplet }}"
+          Add-Content $env:GITHUB_ENV "VCPKG_OVERLAY_TRIPLETS=$env:RX_VCPKG_TRIPLET_DIR"
+
+      - name: Install dependencies
+        if: steps.cache-vcpkg.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $env:VCPKG_ROOT = $env:RX_VCPKG_ROOT
+          $env:VCPKG_DEFAULT_TRIPLET = "${{ matrix.triplet }}"
+          $env:VCPKG_DEFAULT_HOST_TRIPLET = "${{ matrix.host_triplet }}"
+          $env:VCPKG_OVERLAY_TRIPLETS = "$env:RX_VCPKG_TRIPLET_DIR"
+          $grpcPkgs = if ("${{ matrix.flavor }}" -eq "full") { @("protobuf", "grpc", "openssl") } else { @() }
+          & "$env:RX_VCPKG_ROOT\vcpkg.exe" install `
+            zlib zstd bzip2 lz4 crc32c "snappy[*]" leveldb `
+            @grpcPkgs `
+            --triplet ${{ matrix.triplet }} `
+            --host-triplet ${{ matrix.host_triplet }} `
+            --overlay-triplets "$env:RX_VCPKG_TRIPLET_DIR" `
+            --x-buildtrees-root="$env:RUNNER_TEMP\vcpkg-buildtrees" `
+            --x-packages-root="$env:RUNNER_TEMP\vcpkg-packages" `
+            --binarysource=clear `
+            --clean-after-build `
+            --recurse
+
+      - name: Set vcpkg tool paths
+        shell: pwsh
+        run: |
+          if ("${{ matrix.flavor }}" -eq "full") {
+            Add-Content $env:GITHUB_PATH "$env:RX_VCPKG_ROOT\installed\${{ matrix.triplet }}\tools\protobuf"
+            Add-Content $env:GITHUB_PATH "$env:RX_VCPKG_ROOT\installed\${{ matrix.triplet }}\tools\grpc"
+          }
+          $levelDbRoot = (Join-Path $env:RX_VCPKG_ROOT "installed\${{ matrix.triplet }}") -replace '\\', '/'
+          Add-Content $env:GITHUB_ENV "LEVELDB_ROOT=$levelDbRoot"
+
+      - name: Cache RocksDB
+        if: matrix.flavor == 'full'
+        uses: actions/cache@v4
+        id: cache-rocksdb
+        with:
+          path: ${{ github.workspace }}/rocksdb-install
+          key: rocksdb-${{ runner.os }}-${{ matrix.triplet }}-${{ env.ROCKSDB_VERSION }}-v${{ env.CACHE_VERSION }}
+
+      - name: Set ROCKSDB_ROOT
+        if: matrix.flavor == 'full'
+        shell: pwsh
+        run: |
+          $rocksRoot = "${{ github.workspace }}\rocksdb-install" -replace '\\', '/'
+          Add-Content $env:GITHUB_ENV "ROCKSDB_ROOT=$rocksRoot"
+
+      - name: Build RocksDB
+        if: matrix.flavor == 'full' && steps.cache-rocksdb.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $rocksSource = "$env:RUNNER_TEMP\rocksdb"
+          $rocksBuild = "$env:RUNNER_TEMP\rocksdb-build"
+          $rocksInstall = "${{ github.workspace }}\rocksdb-install"
+          $thirdPartyRoot = Join-Path $env:RX_VCPKG_ROOT "installed\${{ matrix.triplet }}"
+          $thirdPartyInclude = Join-Path $thirdPartyRoot "include"
+          $thirdPartyLib = Join-Path $thirdPartyRoot "lib"
+          $thirdPartyRootCmake = $thirdPartyRoot -replace '\\', '/'
+          $thirdPartyIncludeCmake = $thirdPartyInclude -replace '\\', '/'
+          $thirdPartyLibCmake = $thirdPartyLib -replace '\\', '/'
+          function Resolve-VcpkgLib([string[]]$names) {
+            foreach ($name in $names) {
+              $path = Join-Path $thirdPartyLib $name
+              if (Test-Path $path) {
+                return $path
+              }
+            }
+            throw "None of these vcpkg libraries were found: $($names -join ', ')"
+          }
+          $env:SNAPPY_INCLUDE = $thirdPartyInclude
+          $env:SNAPPY_LIB_RELEASE = Resolve-VcpkgLib @("snappy.lib")
+          $env:ZSTD_INCLUDE = $thirdPartyInclude
+          $env:ZSTD_LIB_RELEASE = Resolve-VcpkgLib @("zstd.lib")
+          $env:ZLIB_INCLUDE = $thirdPartyInclude
+          $env:ZLIB_LIB_RELEASE = Resolve-VcpkgLib @("zlib.lib", "z.lib", "zs.lib")
+          $env:LZ4_INCLUDE = $thirdPartyInclude
+          $env:LZ4_LIB_RELEASE = Resolve-VcpkgLib @("lz4.lib")
+          git clone --branch "$env:ROCKSDB_VERSION" --recursive --depth 1 https://github.com/facebook/rocksdb.git "$rocksSource"
+          cmake -S "$rocksSource" -B "$rocksBuild" `
+            -G "Visual Studio 17 2022" -A "${{ matrix.platform }}" `
+            -DCMAKE_TOOLCHAIN_FILE="$env:RX_VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET="${{ matrix.triplet }}" `
+            -DVCPKG_HOST_TRIPLET="${{ matrix.host_triplet }}" `
+            -DVCPKG_OVERLAY_TRIPLETS="$env:RX_VCPKG_TRIPLET_DIR" `
+            -DCMAKE_PREFIX_PATH="$thirdPartyRootCmake" `
+            -DCMAKE_INCLUDE_PATH="$thirdPartyIncludeCmake" `
+            -DCMAKE_LIBRARY_PATH="$thirdPartyLibCmake" `
+            -DCMAKE_INSTALL_PREFIX="$rocksInstall" `
+            -DCMAKE_INSTALL_LIBDIR=lib `
+            -DCMAKE_MSVC_RUNTIME_LIBRARY="MultiThreaded" `
+            -DCMAKE_C_FLAGS="/I$thirdPartyIncludeCmake" `
+            -DCMAKE_CXX_FLAGS="/I$thirdPartyIncludeCmake" `
+            -DPORTABLE=ON `
+            -DWITH_MD_LIBRARY=OFF `
+            -DROCKSDB_BUILD_SHARED=OFF `
+            -DWITH_GFLAGS=OFF `
+            -DWITH_SNAPPY=ON `
+            -DWITH_LZ4=ON `
+            -DWITH_ZSTD=ON `
+            -DWITH_ZLIB=ON `
+            -DWITH_BZ2=ON `
+            -DWITH_BENCHMARK_TOOLS=OFF `
+            -DWITH_TOOLS=OFF `
+            -DWITH_CORE_TOOLS=OFF `
+            -DWITH_TRACE_TOOLS=OFF `
+            -DWITH_TESTS=OFF `
+            -DUSE_RTTI=ON `
+            -DWITH_RUNTIME_DEBUG=OFF `
+            -DWITH_JNI=OFF `
+            -DFAIL_ON_WARNINGS=OFF
+          cmake --build "$rocksBuild" --config Release --target rocksdb --parallel
+          New-Item -ItemType Directory -Force -Path "$rocksInstall\include" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$rocksInstall\lib" | Out-Null
+          Copy-Item -Path "$rocksSource\include\*" -Destination "$rocksInstall\include" -Recurse -Force
+          $rocksLib = Get-ChildItem -Path "$rocksBuild" -Recurse -Filter rocksdb.lib | Select-Object -First 1
+          if ($null -eq $rocksLib) {
+            throw "rocksdb.lib was not produced"
+          }
+          Copy-Item -Path $rocksLib.FullName -Destination "$rocksInstall\lib\rocksdb.lib" -Force
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          $commonArgs = $env:CMAKE_COMMON_ARGS -split '\s+'
+          $flavorArgs = if ("${{ matrix.flavor }}" -eq "full") {
+            @("-DENABLE_GRPC=ON", "-DENABLE_ROCKSDB=ON",
+              "-DLINK_RESOURCES=ON", "-DBUILD_ANN_INDEXES=builtin",
+              "-DWITH_FRISO_DICT=ON")
+          } else {
+            @("-DENABLE_GRPC=OFF", "-DENABLE_ROCKSDB=OFF",
+              "-DLINK_RESOURCES=ON", "-DBUILD_ANN_INDEXES=builtin",
+              "-DENABLE_OPENSSL=OFF", "-DWITH_FRISO_DICT=OFF")
+          }
+          cmake -S . -B build `
+            -G "Visual Studio 17 2022" -A "${{ matrix.platform }}" `
+            -DCMAKE_TOOLCHAIN_FILE="$env:RX_VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET="${{ matrix.triplet }}" `
+            -DVCPKG_HOST_TRIPLET="${{ matrix.host_triplet }}" `
+            -DVCPKG_OVERLAY_TRIPLETS="$env:RX_VCPKG_TRIPLET_DIR" `
+            -DCMAKE_BUILD_TYPE="$env:BUILD_TYPE" `
+            -DCMAKE_MSVC_RUNTIME_LIBRARY="MultiThreaded" `
+            -DPYTHON3="$env:PYTHON3" `
+            @commonArgs `
+            @flavorArgs `
+            -DWITH_LTO=OFF `
+            -DWITH_CPPTRACE=OFF
+
+      - name: Build
+        shell: pwsh
+        run: cmake --build build --config "$env:BUILD_TYPE" --target reindexer_embedded_server --parallel
+
+      - name: Check dependencies
+        shell: pwsh
+        run: |
+          Get-ChildItem build\cpp_src\server\cbinding -Recurse -Filter reindexer_embedded_server.dll |
+            ForEach-Object { dumpbin.exe /DEPENDENTS $_.FullName }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ matrix.platform }}-${{ matrix.flavor }}-reindexer-embedded
+          path: |
+            build/cpp_src/server/cbinding/**/reindexer_embedded_server.dll
+            build/cpp_src/server/cbinding/**/reindexer_embedded_server.pdb
+
+  glibc-and-macos:
+    name: ${{ matrix.name }} (${{ matrix.flavor }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x64-ubuntu-22.04
+            flavor: min
+            runner: ubuntu-22.04
+            triplet: rx-x64-linux-static-release
+            host_triplet: rx-x64-linux-static-release
+            configure_extra: ""
+          - name: linux-x64-ubuntu-22.04
+            flavor: full
+            runner: ubuntu-22.04
+            triplet: rx-x64-linux-static-release
+            host_triplet: rx-x64-linux-static-release
+            configure_extra: ""
+          - name: osx-x64-macos-15
+            flavor: min
+            runner: macos-15-intel
+            triplet: rx-x64-osx-static-release
+            host_triplet: rx-x64-osx-static-release
+            configure_extra: "-DCMAKE_OSX_ARCHITECTURES=x86_64"
+          - name: osx-x64-macos-15
+            flavor: full
+            runner: macos-15-intel
+            triplet: rx-x64-osx-static-release
+            host_triplet: rx-x64-osx-static-release
+            configure_extra: "-DCMAKE_OSX_ARCHITECTURES=x86_64"
+          - name: osx-arm64-macos-15
+            flavor: min
+            runner: macos-15
+            triplet: rx-arm64-osx-static-release
+            host_triplet: rx-arm64-osx-static-release
+            configure_extra: "-DCMAKE_OSX_ARCHITECTURES=arm64"
+          - name: osx-arm64-macos-15
+            flavor: full
+            runner: macos-15
+            triplet: rx-arm64-osx-static-release
+            host_triplet: rx-arm64-osx-static-release
+            configure_extra: "-DCMAKE_OSX_ARCHITECTURES=arm64"
+    env:
+      RX_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg
+      RX_VCPKG_TRIPLET_DIR: ${{ github.workspace }}/.vcpkg-triplets
+      VCPKG_ROOT: ${{ github.workspace }}/.vcpkg
+      VCPKG_BINARY_SOURCES: clear
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 100
+
+      - name: Fetch tags
+        run: git fetch --depth=100 origin +refs/tags/*:refs/tags/*
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Setup packages
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            sudo apt-get update
+            sudo apt-get install -y build-essential gcc-12 g++-12 ninja-build pkg-config autoconf automake libtool python3-pip python3-venv
+            echo "CC=/usr/bin/gcc-12" >> "$GITHUB_ENV"
+            echo "CXX=/usr/bin/g++-12" >> "$GITHUB_ENV"
+            echo "SECTION_COMPILE_FLAGS=-ffunction-sections -fdata-sections" >> "$GITHUB_ENV"
+          else
+            brew update
+            brew install ninja pkg-config autoconf automake libtool
+            echo "SECTION_COMPILE_FLAGS=-ffunction-sections -fdata-sections -flto" >> "$GITHUB_ENV"
+          fi
+          python3 -m venv "$RUNNER_TEMP/reindexer-python"
+          "$RUNNER_TEMP/reindexer-python/bin/python" -m pip install --upgrade pip
+          if [[ "${{ matrix.flavor }}" == "full" ]]; then
+            "$RUNNER_TEMP/reindexer-python/bin/python" -m pip install grpcio grpcio-tools pyyaml
+          fi
+          echo "$RUNNER_TEMP/reindexer-python/bin" >> "$GITHUB_PATH"
+          echo "PYTHON3=$RUNNER_TEMP/reindexer-python/bin/python3" >> "$GITHUB_ENV"
+
+      - name: Cache vcpkg packages
+        uses: actions/cache@v4
+        id: cache-vcpkg
+        with:
+          path: ${{ github.workspace }}/.vcpkg/installed
+          key: vcpkg-${{ runner.os }}-${{ matrix.triplet }}-${{ matrix.flavor }}-v${{ env.CACHE_VERSION }}
+
+      - name: Bootstrap vcpkg
+        run: |
+          if [ ! -d "$RX_VCPKG_ROOT/.git" ]; then
+            if [ -d "$RX_VCPKG_ROOT/installed" ]; then
+              mv "$RX_VCPKG_ROOT/installed" "$RUNNER_TEMP/vcpkg-installed-cache"
+            fi
+            rm -rf "$RX_VCPKG_ROOT"
+            git clone https://github.com/microsoft/vcpkg.git "$RX_VCPKG_ROOT" --depth 1
+            if [ -d "$RUNNER_TEMP/vcpkg-installed-cache" ]; then
+              mv "$RUNNER_TEMP/vcpkg-installed-cache" "$RX_VCPKG_ROOT/installed"
+            fi
+          else
+            cd "$RX_VCPKG_ROOT" && git pull --ff-only
+          fi
+          mkdir -p "$RX_VCPKG_TRIPLET_DIR"
+          cat > "$RX_VCPKG_TRIPLET_DIR/rx-x64-linux-static-release.cmake" <<'EOF'
+          set(VCPKG_TARGET_ARCHITECTURE x64)
+          set(VCPKG_CMAKE_SYSTEM_NAME Linux)
+          set(VCPKG_LIBRARY_LINKAGE static)
+          set(VCPKG_CRT_LINKAGE dynamic)
+          set(VCPKG_BUILD_TYPE release)
+          EOF
+          cat > "$RX_VCPKG_TRIPLET_DIR/rx-x64-osx-static-release.cmake" <<'EOF'
+          set(VCPKG_TARGET_ARCHITECTURE x64)
+          set(VCPKG_CMAKE_SYSTEM_NAME Darwin)
+          set(VCPKG_OSX_ARCHITECTURES x86_64)
+          set(VCPKG_LIBRARY_LINKAGE static)
+          set(VCPKG_CRT_LINKAGE dynamic)
+          set(VCPKG_BUILD_TYPE release)
+          EOF
+          cat > "$RX_VCPKG_TRIPLET_DIR/rx-arm64-osx-static-release.cmake" <<'EOF'
+          set(VCPKG_TARGET_ARCHITECTURE arm64)
+          set(VCPKG_CMAKE_SYSTEM_NAME Darwin)
+          set(VCPKG_OSX_ARCHITECTURES arm64)
+          set(VCPKG_LIBRARY_LINKAGE static)
+          set(VCPKG_CRT_LINKAGE dynamic)
+          set(VCPKG_BUILD_TYPE release)
+          EOF
+          "$RX_VCPKG_ROOT/bootstrap-vcpkg.sh"
+          echo "VCPKG_ROOT=$RX_VCPKG_ROOT" >> "$GITHUB_ENV"
+          echo "VCPKG_DEFAULT_TRIPLET=${{ matrix.triplet }}" >> "$GITHUB_ENV"
+          echo "VCPKG_DEFAULT_HOST_TRIPLET=${{ matrix.host_triplet }}" >> "$GITHUB_ENV"
+          echo "VCPKG_OVERLAY_TRIPLETS=$RX_VCPKG_TRIPLET_DIR" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        if: steps.cache-vcpkg.outputs.cache-hit != 'true'
+        run: |
+          if [[ "${{ matrix.flavor }}" == "full" ]]; then
+            GRPC_PKGS="protobuf grpc openssl"
+          else
+            GRPC_PKGS=""
+          fi
+          "$RX_VCPKG_ROOT/vcpkg" install \
+            zlib zstd bzip2 lz4 crc32c snappy leveldb \
+            $GRPC_PKGS \
+            --triplet "${{ matrix.triplet }}" \
+            --host-triplet "${{ matrix.host_triplet }}" \
+            --overlay-triplets "$RX_VCPKG_TRIPLET_DIR" \
+            --x-buildtrees-root="$RUNNER_TEMP/vcpkg-buildtrees" \
+            --x-packages-root="$RUNNER_TEMP/vcpkg-packages" \
+            --binarysource=clear \
+            --clean-after-build \
+            --recurse
+
+      - name: Set vcpkg tool paths
+        run: |
+          if [[ "${{ matrix.flavor }}" == "full" ]]; then
+            echo "$RX_VCPKG_ROOT/installed/${{ matrix.triplet }}/tools/protobuf" >> "$GITHUB_PATH"
+            echo "$RX_VCPKG_ROOT/installed/${{ matrix.triplet }}/tools/grpc" >> "$GITHUB_PATH"
+          fi
+          echo "LEVELDB_ROOT=$RX_VCPKG_ROOT/installed/${{ matrix.triplet }}" >> "$GITHUB_ENV"
+
+      - name: Use system compression libs
+        run: |
+          # Remove static archives from vcpkg so cmake falls through to system dynamic libs.
+          # Ubuntu 22.04 default install always includes: libbz2-1.0, liblz4-1, libzstd1, zlib1g
+          # macOS 13+ always includes: /usr/lib/libbz2.dylib, /usr/lib/libzstd.1.dylib, /usr/lib/libz.dylib (lz4 absent)
+          # zlib stays static in 'full' because gRPC's static archives already embed zlib code;
+          # removing it would create duplicate symbols without size benefit.
+          # In 'min' (no gRPC), zlib can safely be made dynamic.
+          VCPKG_LIB="$RX_VCPKG_ROOT/installed/${{ matrix.triplet }}/lib"
+          rm -f "$VCPKG_LIB/libbz2.a"  "$VCPKG_LIB/bz2.lib"  || true
+          rm -f "$VCPKG_LIB/libzstd.a" "$VCPKG_LIB/zstd.lib" || true
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            rm -f "$VCPKG_LIB/liblz4.a" || true
+            # Ubuntu's system static archives (libbz2-dev, libzstd-dev, liblz4-dev) are NOT
+            # compiled with -fPIC.  After the vcpkg copies are removed above, cmake falls
+            # through and finds these system .a files, which the linker then rejects when
+            # building the shared library with "relocation R_X86_64_PC32 ... can not be used
+            # when making a shared object".  Remove the system .a files so the linker is
+            # forced to use the dynamic .so symlinks instead.  The runtime shared libraries
+            # (libbz2-1.0, libzstd1, liblz4-1) are always present on Ubuntu 22.04.
+            sudo rm -f /usr/lib/x86_64-linux-gnu/libbz2.a  || true
+            sudo rm -f /usr/lib/x86_64-linux-gnu/libzstd.a || true
+            sudo rm -f /usr/lib/x86_64-linux-gnu/liblz4.a  || true
+          fi
+          if [[ "${{ matrix.flavor }}" == "min" ]]; then
+            rm -f "$VCPKG_LIB/libz.a" || true
+          fi
+
+      - name: Cache RocksDB
+        if: matrix.flavor == 'full'
+        uses: actions/cache@v4
+        id: cache-rocksdb
+        with:
+          path: ${{ github.workspace }}/rocksdb-install
+          key: rocksdb-${{ runner.os }}-${{ matrix.triplet }}-${{ env.ROCKSDB_VERSION }}-v${{ env.CACHE_VERSION }}
+
+      - name: Set ROCKSDB_ROOT
+        if: matrix.flavor == 'full'
+        run: echo "ROCKSDB_ROOT=${{ github.workspace }}/rocksdb-install" >> "$GITHUB_ENV"
+
+      - name: Build RocksDB
+        if: matrix.flavor == 'full' && steps.cache-rocksdb.outputs.cache-hit != 'true'
+        run: |
+          git clone --branch "$ROCKSDB_VERSION" --recursive --depth 1 https://github.com/facebook/rocksdb.git "$RUNNER_TEMP/rocksdb"
+          cmake -S "$RUNNER_TEMP/rocksdb" -B "$RUNNER_TEMP/rocksdb-build" -GNinja \
+            -DCMAKE_TOOLCHAIN_FILE="$RX_VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_TARGET_TRIPLET="${{ matrix.triplet }}" \
+            -DVCPKG_HOST_TRIPLET="${{ matrix.host_triplet }}" \
+            -DVCPKG_OVERLAY_TRIPLETS="$RX_VCPKG_TRIPLET_DIR" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$RX_VCPKG_ROOT/installed/${{ matrix.triplet }}" \
+            -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}/rocksdb-install" \
+            -DCMAKE_INSTALL_LIBDIR=lib \
+            -DCMAKE_C_FLAGS="-fPIC" \
+            -DCMAKE_CXX_FLAGS="-fPIC" \
+            -DPORTABLE=ON \
+            -DWITH_MD_LIBRARY=OFF \
+            -DROCKSDB_BUILD_SHARED=OFF \
+            -DWITH_GFLAGS=OFF \
+            -DWITH_SNAPPY=ON \
+            -DWITH_LZ4=ON \
+            -DWITH_ZSTD=ON \
+            -DWITH_ZLIB=ON \
+            -DWITH_BZ2=ON \
+            -DWITH_BENCHMARK_TOOLS=OFF \
+            -DWITH_TOOLS=OFF \
+            -DWITH_CORE_TOOLS=OFF \
+            -DWITH_TRACE_TOOLS=OFF \
+            -DWITH_TESTS=OFF \
+            -DUSE_RTTI=ON \
+            -DWITH_RUNTIME_DEBUG=OFF \
+            -DWITH_JNI=OFF \
+            -DFAIL_ON_WARNINGS=OFF \
+            ${{ matrix.configure_extra }}
+          cmake --build "$RUNNER_TEMP/rocksdb-build" --target install --parallel 4
+
+      - name: Configure
+        run: |
+          # MinSizeRel flags: -g1 enables minimal debug info for separate debug artifacts.
+          # macOS uses Clang's -Oz which is more aggressive than -Os for size.
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            SIZE_FLAGS=(-DCMAKE_CXX_FLAGS_MINSIZEREL="-Oz -DNDEBUG -g1"
+                        -DCMAKE_C_FLAGS_MINSIZEREL="-Oz -DNDEBUG -g1")
+          else
+            SIZE_FLAGS=(-DCMAKE_CXX_FLAGS_MINSIZEREL="-Os -DNDEBUG -g1"
+                        -DCMAKE_C_FLAGS_MINSIZEREL="-Os -DNDEBUG -g1")
+          fi
+          if [[ "${{ matrix.flavor }}" == "full" ]]; then
+            FLAVOR_FLAGS=(-DENABLE_GRPC=ON -DENABLE_ROCKSDB=ON
+                          -DLINK_RESOURCES=ON -DBUILD_ANN_INDEXES=builtin
+                          -DWITH_FRISO_DICT=ON)
+          else
+            FLAVOR_FLAGS=(-DENABLE_GRPC=OFF -DENABLE_ROCKSDB=OFF
+                          -DLINK_RESOURCES=ON -DBUILD_ANN_INDEXES=builtin
+                          -DENABLE_OPENSSL=OFF -DWITH_FRISO_DICT=OFF)
+          fi
+          cmake -S . -B build -GNinja \
+            -DCMAKE_TOOLCHAIN_FILE="$RX_VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_TARGET_TRIPLET="${{ matrix.triplet }}" \
+            -DVCPKG_HOST_TRIPLET="${{ matrix.host_triplet }}" \
+            -DVCPKG_OVERLAY_TRIPLETS="$RX_VCPKG_TRIPLET_DIR" \
+            -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
+            -DPYTHON3="$PYTHON3" \
+            ${{ matrix.configure_extra }} \
+            $CMAKE_COMMON_ARGS \
+            "${FLAVOR_FLAGS[@]}" \
+            "${SIZE_FLAGS[@]}"
+
+      - name: Build
+        run: cmake --build build --target reindexer_embedded_server --parallel 4
+
+      - name: Extract and strip debug symbols
+        run: |
+          LIB_DIR="build/cpp_src/server/cbinding"
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            LIB="$LIB_DIR/libreindexer_embedded_server.so"
+            objcopy --only-keep-debug "$LIB" "$LIB.debug"
+            strip -g --strip-unneeded "$LIB"
+            objcopy --add-gnu-debuglink="$LIB.debug" "$LIB"
+          else
+            LIB="$LIB_DIR/libreindexer_embedded_server.dylib"
+            dsymutil "$LIB" -o "$LIB_DIR/libreindexer_embedded_server.dylib.dSYM"
+            strip -x "$LIB"
+          fi
+
+      - name: Check dependencies
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            ldd build/cpp_src/server/cbinding/libreindexer_embedded_server.so
+          else
+            otool -L build/cpp_src/server/cbinding/libreindexer_embedded_server.dylib
+            file build/cpp_src/server/cbinding/libreindexer_embedded_server.dylib
+            lipo -info build/cpp_src/server/cbinding/libreindexer_embedded_server.dylib
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}-${{ matrix.flavor }}-reindexer-embedded
+          path: |
+            build/cpp_src/server/cbinding/libreindexer_embedded_server.so
+            build/cpp_src/server/cbinding/libreindexer_embedded_server.dylib
+
+      - name: Upload debug symbols
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}-${{ matrix.flavor }}-reindexer-debug
+          path: |
+            build/cpp_src/server/cbinding/libreindexer_embedded_server.so.debug
+            build/cpp_src/server/cbinding/libreindexer_embedded_server.dylib.dSYM/**
+          if-no-files-found: ignore
+
+  alpine:
+    name: linux-musl-x64-alpine-3.18 (${{ matrix.flavor }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        flavor: [min, full]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 100
+
+      - name: Setup Alpine 3.18
+        uses: jirutka/setup-alpine@v1
+        with:
+          arch: x86_64
+          branch: v3.18
+          shell-name: alpine.sh
+          packages: >
+            bash
+            build-base
+            linux-headers
+            cmake
+            ninja
+            git
+            curl
+            pkgconf
+            autoconf
+            automake
+            libtool
+            python3
+            py3-pip
+            openssl-dev
+            openssl-libs-static
+            zlib-dev
+            zlib-static
+            zstd-dev
+            zstd-static
+            bzip2-dev
+            bzip2-static
+            lz4-dev
+            lz4-static
+
+      - name: Fetch tags
+        shell: alpine.sh --root {0}
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git fetch --depth=100 origin +refs/tags/*:refs/tags/*
+
+      - name: Cache Alpine deps
+        uses: actions/cache@v4
+        id: cache-alpine-deps
+        with:
+          path: ${{ github.workspace }}/alpine-deps
+          key: alpine-deps-${{ matrix.flavor }}-${{ env.ROCKSDB_VERSION }}-v${{ env.CACHE_VERSION }}
+
+      - name: Build static dependencies
+        if: steps.cache-alpine-deps.outputs.cache-hit != 'true'
+        shell: alpine.sh --root {0}
+        run: |
+          set -eux
+          export PIP_BREAK_SYSTEM_PACKAGES=1
+          python3 -m pip install --upgrade pip
+          if [[ "${{ matrix.flavor }}" == "full" ]]; then
+            python3 -m pip install grpcio grpcio-tools
+          fi
+
+          DEPS_PREFIX="$GITHUB_WORKSPACE/alpine-deps"
+          mkdir -p "$DEPS_PREFIX"
+
+          export CFLAGS="-Os -DNDEBUG -fPIC -fvisibility=hidden -ffunction-sections -fdata-sections"
+          export CXXFLAGS="-std=c++20 -Os -DNDEBUG -fPIC -fvisibility=hidden -fvisibility-inlines-hidden -ffunction-sections -fdata-sections"
+          export LDFLAGS="-Wl,--gc-sections -s"
+          mkdir -p "$HOME/deps"
+
+          if [ ! -d "$HOME/deps/snappy" ]; then
+            git clone --branch 1.2.2 --depth 1 https://github.com/google/snappy.git "$HOME/deps/snappy"
+          fi
+          cmake -S "$HOME/deps/snappy" -B "$HOME/deps/snappy/build" -GNinja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSNAPPY_BUILD_TESTS=OFF \
+            -DSNAPPY_BUILD_BENCHMARKS=OFF \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+            -DCMAKE_INSTALL_PREFIX="$DEPS_PREFIX"
+          cmake --build "$HOME/deps/snappy/build" --target install --parallel 4
+
+          if [[ "${{ matrix.flavor }}" == "full" ]]; then
+            if [ ! -d "$HOME/deps/grpc" ]; then
+              git clone --branch v1.67.0 --recursive --depth 1 https://github.com/grpc/grpc "$HOME/deps/grpc"
+            fi
+            cmake -S "$HOME/deps/grpc" -B "$HOME/deps/grpc/build" -GNinja \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DgRPC_INSTALL=ON \
+              -DgRPC_BUILD_TESTS=OFF \
+              -DBUILD_SHARED_LIBS=OFF \
+              -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+              -DOPENSSL_USE_STATIC_LIBS=ON \
+              -DgRPC_SSL_PROVIDER=package \
+              -DgRPC_ZLIB_PROVIDER=package \
+              -DgRPC_ABSL_PROVIDER=module \
+              -DgRPC_RE2_PROVIDER=module \
+              -DgRPC_CARES_PROVIDER=module \
+              -DgRPC_PROTOBUF_PROVIDER=module \
+              -DCMAKE_INSTALL_PREFIX="$DEPS_PREFIX"
+            cmake --build "$HOME/deps/grpc/build" --target install --parallel 4
+          fi
+
+          if [ ! -d "$HOME/deps/leveldb" ]; then
+            git clone --depth 1 https://github.com/restream/leveldb.git "$HOME/deps/leveldb"
+          fi
+          cmake -S "$HOME/deps/leveldb" -B "$HOME/deps/leveldb/build" -GNinja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLEVELDB_BUILD_TESTS=OFF \
+            -DLEVELDB_BUILD_BENCHMARKS=OFF \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+            -DCMAKE_PREFIX_PATH="$DEPS_PREFIX" \
+            -DCMAKE_INSTALL_PREFIX="$DEPS_PREFIX"
+          cmake --build "$HOME/deps/leveldb/build" --target install --parallel 4
+
+          if [[ "${{ matrix.flavor }}" == "full" ]]; then
+            if [ ! -d "$HOME/deps/rocksdb" ]; then
+              git clone --branch "$ROCKSDB_VERSION" --recursive --depth 1 https://github.com/facebook/rocksdb.git "$HOME/deps/rocksdb"
+            fi
+            cmake -S "$HOME/deps/rocksdb" -B "$HOME/deps/rocksdb/build" -GNinja \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DPORTABLE=ON \
+              -DWITH_MD_LIBRARY=OFF \
+              -DROCKSDB_BUILD_SHARED=OFF \
+              -DWITH_GFLAGS=OFF \
+              -DWITH_SNAPPY=ON \
+              -DWITH_LZ4=ON \
+              -DWITH_ZSTD=ON \
+              -DWITH_ZLIB=ON \
+              -DWITH_BZ2=ON \
+              -DWITH_BENCHMARK_TOOLS=OFF \
+              -DWITH_TOOLS=OFF \
+              -DWITH_CORE_TOOLS=OFF \
+              -DWITH_TRACE_TOOLS=OFF \
+              -DWITH_TESTS=OFF \
+              -DUSE_RTTI=ON \
+              -DFAIL_ON_WARNINGS=OFF \
+              -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+              -DCMAKE_PREFIX_PATH="$DEPS_PREFIX" \
+              -DCMAKE_INSTALL_PREFIX="$DEPS_PREFIX"
+            cmake --build "$HOME/deps/rocksdb/build" --target install --parallel 4
+          fi
+
+      - name: Install Python gRPC tools
+        if: matrix.flavor == 'full'
+        shell: alpine.sh --root {0}
+        run: |
+          export PIP_BREAK_SYSTEM_PACKAGES=1
+          python3 -m pip install grpcio grpcio-tools
+
+      - name: Set Alpine dep paths
+        shell: alpine.sh --root {0}
+        run: |
+          echo "$GITHUB_WORKSPACE/alpine-deps/bin" >> "$GITHUB_PATH"
+
+      - name: Configure
+        shell: alpine.sh --root {0}
+        run: |
+          export SECTION_COMPILE_FLAGS="-ffunction-sections -fdata-sections"
+          if [[ "${{ matrix.flavor }}" == "full" ]]; then
+            FLAVOR_FLAGS="-DENABLE_GRPC=ON -DENABLE_ROCKSDB=ON -DLINK_RESOURCES=ON -DBUILD_ANN_INDEXES=builtin -DWITH_FRISO_DICT=ON"
+          else
+            FLAVOR_FLAGS="-DENABLE_GRPC=OFF -DENABLE_ROCKSDB=OFF -DLINK_RESOURCES=ON -DBUILD_ANN_INDEXES=builtin -DENABLE_OPENSSL=OFF -DWITH_FRISO_DICT=OFF"
+          fi
+          cmake -S . -B build -GNinja \
+            -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
+            -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/alpine-deps" \
+            -DOPENSSL_USE_STATIC_LIBS=ON \
+            -DCMAKE_CXX_FLAGS_MINSIZEREL="-Os -DNDEBUG -g1" \
+            -DCMAKE_C_FLAGS_MINSIZEREL="-Os -DNDEBUG -g1" \
+            $CMAKE_COMMON_ARGS \
+            $FLAVOR_FLAGS \
+            -DWITH_LTO=OFF
+
+      - name: Build
+        shell: alpine.sh --root {0}
+        run: cmake --build build --target reindexer_embedded_server --parallel 4
+
+      - name: Extract and strip debug symbols
+        shell: alpine.sh --root {0}
+        run: |
+          LIB="build/cpp_src/server/cbinding/libreindexer_embedded_server.so"
+          objcopy --only-keep-debug "$LIB" "$LIB.debug"
+          strip -g --strip-unneeded "$LIB"
+          objcopy --add-gnu-debuglink="$LIB.debug" "$LIB"
+
+      - name: Check dependencies
+        shell: alpine.sh --root {0}
+        run: ldd build/cpp_src/server/cbinding/libreindexer_embedded_server.so
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-musl-x64-alpine-3.18-${{ matrix.flavor }}-reindexer-embedded
+          path: build/cpp_src/server/cbinding/libreindexer_embedded_server.so
+
+      - name: Upload debug symbols
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-musl-x64-alpine-3.18-${{ matrix.flavor }}-reindexer-debug
+          path: build/cpp_src/server/cbinding/libreindexer_embedded_server.so.debug
+          if-no-files-found: ignore

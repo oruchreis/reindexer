@@ -1,5 +1,6 @@
 #include "reindexer_c.h"
 
+#include <cstdlib>
 #include <string.h>
 
 #include "cgocancelcontextpool.h"
@@ -989,4 +990,8 @@ reindexer_error reindexer_erase_events(uintptr_t rx, uint32_t events_count) {
 const char* reindexer_version() {
 	const char* version_str = REINDEX_VERSION;
 	return version_str;
+}
+
+void reindexer_malloc_free(void* ptr) {
+	free(ptr);
 }
